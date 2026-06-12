@@ -1,0 +1,962 @@
+<!DOCTYPE html>
+<html lang="ka">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>პერსონალური რემაინდერი</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #f5f5f4;
+      --surface: #ffffff;
+      --border: #e7e5e4;
+      --text: #1c1917;
+      --muted: #78716c;
+      --accent: #2563eb;
+      --accent-hover: #1d4ed8;
+      --danger: #dc2626;
+      --warning: #d97706;
+      --success: #16a34a;
+      --sidebar-w: 220px;
+      --radius: 8px;
+      --shadow: 0 1px 3px rgba(0,0,0,.08);
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+
+    .app { display: flex; min-height: 100vh; }
+
+    /* Sidebar */
+    .sidebar {
+      width: var(--sidebar-w);
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      padding: 1.25rem 0;
+      flex-shrink: 0;
+      position: fixed;
+      top: 0; left: 0; bottom: 0;
+      z-index: 100;
+      transition: transform .25s ease;
+    }
+
+    .sidebar-header {
+      padding: 0 1.25rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: .5rem;
+    }
+
+    .sidebar-header h1 {
+      font-size: 1rem;
+      font-weight: 600;
+    }
+
+    .nav-item {
+      display: block;
+      width: 100%;
+      text-align: left;
+      padding: .65rem 1.25rem;
+      border: none;
+      background: none;
+      font-size: .9rem;
+      color: var(--text);
+      cursor: pointer;
+      transition: background .15s;
+    }
+
+    .nav-item:hover { background: var(--bg); }
+    .nav-item.active {
+      background: #eff6ff;
+      color: var(--accent);
+      font-weight: 500;
+      border-right: 3px solid var(--accent);
+    }
+
+    .menu-toggle {
+      display: none;
+      position: fixed;
+      top: .75rem; left: .75rem;
+      z-index: 200;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: .5rem .75rem;
+      cursor: pointer;
+      font-size: 1.1rem;
+      box-shadow: var(--shadow);
+    }
+
+    .overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.3);
+      z-index: 90;
+    }
+
+    /* Main */
+    .main {
+      flex: 1;
+      margin-left: var(--sidebar-w);
+      padding: 1.5rem;
+      max-width: 900px;
+    }
+
+    .page { display: none; }
+    .page.active { display: block; }
+
+    .page-title {
+      font-size: 1.35rem;
+      font-weight: 600;
+      margin-bottom: 1.25rem;
+    }
+
+    /* Stats */
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: .75rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1rem;
+      text-align: center;
+      box-shadow: var(--shadow);
+    }
+
+    .stat-card .num {
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: var(--accent);
+    }
+
+    .stat-card .label {
+      font-size: .78rem;
+      color: var(--muted);
+      margin-top: .15rem;
+    }
+
+    /* Sections */
+    .section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      margin-bottom: 1rem;
+      box-shadow: var(--shadow);
+    }
+
+    .section h2 {
+      font-size: .95rem;
+      font-weight: 600;
+      margin-bottom: .85rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .03em;
+    }
+
+    .empty {
+      color: var(--muted);
+      font-size: .9rem;
+      padding: .5rem 0;
+    }
+
+    /* Cards */
+    .card {
+      display: flex;
+      align-items: flex-start;
+      gap: .75rem;
+      padding: .85rem;
+      border: 2px solid var(--border);
+      border-radius: var(--radius);
+      margin-bottom: .5rem;
+      background: var(--surface);
+      transition: border-color .15s;
+    }
+
+    .card.overdue { border-color: var(--danger); }
+    .card.soon { border-color: var(--warning); }
+    .card.done { opacity: .55; }
+
+    .card input[type="checkbox"] {
+      width: 18px; height: 18px;
+      margin-top: 2px;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .card-body { flex: 1; min-width: 0; }
+
+    .card-text {
+      font-size: .95rem;
+      word-break: break-word;
+    }
+
+    .card-meta {
+      font-size: .8rem;
+      color: var(--muted);
+      margin-top: .2rem;
+    }
+
+    .badge {
+      display: inline-block;
+      font-size: .7rem;
+      padding: .1rem .45rem;
+      border-radius: 4px;
+      font-weight: 500;
+      margin-left: .35rem;
+      vertical-align: middle;
+    }
+
+    .badge-high { background: #fee2e2; color: #991b1b; }
+    .badge-medium { background: #fef3c7; color: #92400e; }
+    .badge-low { background: #e7e5e4; color: #57534e; }
+
+    .badge-birthday { background: #fce7f3; color: #9d174d; }
+    .badge-anniversary { background: #ede9fe; color: #5b21b6; }
+    .badge-event { background: #dbeafe; color: #1e40af; }
+    .badge-other { background: #e7e5e4; color: #57534e; }
+
+    .days-left {
+      font-weight: 600;
+      color: var(--accent);
+    }
+
+    .days-left.today { color: var(--success); }
+    .days-left.past { color: var(--danger); }
+
+    .btn-delete {
+      background: none;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 1.1rem;
+      padding: .15rem .35rem;
+      border-radius: 4px;
+      flex-shrink: 0;
+      line-height: 1;
+    }
+
+    .btn-delete:hover { color: var(--danger); background: #fee2e2; }
+
+    /* Forms */
+    .form-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      box-shadow: var(--shadow);
+      max-width: 520px;
+    }
+
+    .form-group {
+      margin-bottom: 1rem;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: .85rem;
+      font-weight: 500;
+      margin-bottom: .35rem;
+    }
+
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+      width: 100%;
+      padding: .55rem .75rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font-size: .9rem;
+      font-family: inherit;
+      background: var(--surface);
+    }
+
+    .form-group input:focus,
+    .form-group select:focus,
+    .form-group textarea:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(37,99,235,.12);
+    }
+
+    .btn {
+      display: inline-block;
+      padding: .55rem 1.1rem;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: var(--radius);
+      font-size: .9rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background .15s;
+    }
+
+    .btn:hover { background: var(--accent-hover); }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+    /* Habit days */
+    .day-toggles {
+      display: flex;
+      gap: .35rem;
+      flex-wrap: wrap;
+    }
+
+    .day-toggle {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: .2rem;
+    }
+
+    .day-toggle span {
+      font-size: .72rem;
+      color: var(--muted);
+    }
+
+    .day-toggle input {
+      width: 32px; height: 32px;
+      cursor: pointer;
+      accent-color: var(--accent);
+    }
+
+    .habit-card .progress {
+      font-size: .82rem;
+      color: var(--muted);
+      margin-top: .35rem;
+    }
+
+    .habit-card .progress strong { color: var(--accent); }
+
+    .habit-schedule {
+      display: flex;
+      gap: .25rem;
+      margin-top: .5rem;
+    }
+
+    .habit-schedule .day-dot {
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      border: 2px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: .65rem;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all .15s;
+      user-select: none;
+    }
+
+    .habit-schedule .day-dot.scheduled { border-color: var(--accent); color: var(--accent); }
+    .habit-schedule .day-dot.done {
+      background: var(--success);
+      border-color: var(--success);
+      color: #fff;
+    }
+
+    .habit-schedule .day-dot:not(.scheduled) {
+      opacity: .3;
+      cursor: default;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 3rem;
+      color: var(--muted);
+    }
+
+    .error-banner {
+      background: #fee2e2;
+      color: #991b1b;
+      padding: .75rem 1rem;
+      border-radius: var(--radius);
+      margin-bottom: 1rem;
+      font-size: .9rem;
+      display: none;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .sidebar {
+        transform: translateX(-100%);
+      }
+      .sidebar.open { transform: translateX(0); }
+      .overlay.open { display: block; }
+      .menu-toggle { display: block; }
+      .main {
+        margin-left: 0;
+        padding: 1rem;
+        padding-top: 3.5rem;
+      }
+      .stats { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <button class="menu-toggle" id="menuToggle" aria-label="მენიუ">☰</button>
+  <div class="overlay" id="overlay"></div>
+
+  <div class="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <h1>📋 რემაინდერი</h1>
+      </div>
+      <nav>
+        <button class="nav-item active" data-page="dashboard">დეშბორდი</button>
+        <button class="nav-item" data-page="new-task">ახალი ამოცანა</button>
+        <button class="nav-item" data-page="new-event">ახალი თარიღი</button>
+        <button class="nav-item" data-page="habits">ჩვევები</button>
+        <button class="nav-item" data-page="all-tasks">ყველა ამოცანა</button>
+      </nav>
+    </aside>
+
+    <main class="main">
+      <div class="error-banner" id="errorBanner"></div>
+
+      <!-- Dashboard -->
+      <div class="page active" id="page-dashboard">
+        <h1 class="page-title">დეშბორდი</h1>
+        <div class="stats" id="stats"></div>
+
+        <div class="section">
+          <h2>მიმდინარე ამოცანები</h2>
+          <div id="dash-tasks"></div>
+        </div>
+
+        <div class="section">
+          <h2>მოახლოებული თარიღები (14 დღე)</h2>
+          <div id="dash-events"></div>
+        </div>
+
+        <div class="section">
+          <h2>დღევანდელი ჩვევები</h2>
+          <div id="dash-habits"></div>
+        </div>
+      </div>
+
+      <!-- New Task -->
+      <div class="page" id="page-new-task">
+        <h1 class="page-title">ახალი ამოცანა</h1>
+        <form class="form-card" id="taskForm">
+          <div class="form-group">
+            <label for="taskText">ამოცანა</label>
+            <input type="text" id="taskText" required placeholder="რა უნდა გაკეთდეს?">
+          </div>
+          <div class="form-group">
+            <label for="taskDate">დედლაინი</label>
+            <input type="date" id="taskDate" required>
+          </div>
+          <div class="form-group">
+            <label for="taskPriority">პრიორიტეტი</label>
+            <select id="taskPriority">
+              <option value="high">მნიშვნელოვანი</option>
+              <option value="medium" selected>ჩვეულებრივი</option>
+              <option value="low">დაბალი</option>
+            </select>
+          </div>
+          <button type="submit" class="btn">დამატება</button>
+        </form>
+      </div>
+
+      <!-- New Event -->
+      <div class="page" id="page-new-event">
+        <h1 class="page-title">ახალი თარიღი</h1>
+        <form class="form-card" id="eventForm">
+          <div class="form-group">
+            <label for="eventText">აღწერა</label>
+            <input type="text" id="eventText" required placeholder="მაგ: მამის დაბადების დღე">
+          </div>
+          <div class="form-group">
+            <label for="eventDate">თარიღი</label>
+            <input type="date" id="eventDate" required>
+          </div>
+          <div class="form-group">
+            <label for="eventType">ტიპი</label>
+            <select id="eventType">
+              <option value="birthday">დაბადების დღე</option>
+              <option value="anniversary">წლისთავი</option>
+              <option value="event">ღონისძიება</option>
+              <option value="other">სხვა</option>
+            </select>
+          </div>
+          <button type="submit" class="btn">დამატება</button>
+        </form>
+      </div>
+
+      <!-- Habits -->
+      <div class="page" id="page-habits">
+        <h1 class="page-title">ჩვევები</h1>
+        <form class="form-card" id="habitForm" style="margin-bottom:1.5rem">
+          <div class="form-group">
+            <label for="habitText">ჩვევის სახელი</label>
+            <input type="text" id="habitText" required placeholder="მაგ: სპორტი, წაკითხვა">
+          </div>
+          <div class="form-group">
+            <label>კვირის დღეები</label>
+            <div class="day-toggles" id="habitDayToggles"></div>
+          </div>
+          <button type="submit" class="btn">დამატება</button>
+        </form>
+        <div id="habits-list"></div>
+      </div>
+
+      <!-- All Tasks -->
+      <div class="page" id="page-all-tasks">
+        <h1 class="page-title">ყველა ამოცანა</h1>
+        <div id="all-tasks-list"></div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const SUPABASE_URL = 'https://bihjzpebagywsgwakvde.supabase.co';
+    const SUPABASE_KEY = 'sb_publishable_Sd9qIw8j9MPjleM9lHSNsA_dy2NvUf_';
+
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    const DAY_LABELS = ['ო', 'ს', 'მ', 'ხ', 'პ', 'შ', 'კ'];
+    const PRIORITY_LABELS = { high: 'მნიშვნელოვანი', medium: 'ჩვეულებრივი', low: 'დაბალი' };
+    const PRIORITY_BADGE = { high: 'badge-high', medium: 'badge-medium', low: 'badge-low' };
+    const TYPE_LABELS = { birthday: 'დაბადების დღე', anniversary: 'წლისთავი', event: 'ღონისძიება', other: 'სხვა' };
+    const TYPE_BADGE = { birthday: 'badge-birthday', anniversary: 'badge-anniversary', event: 'badge-event', other: 'badge-other' };
+
+    let tasks = [];
+    let events = [];
+    let habits = [];
+
+    // --- Date helpers ---
+    function todayStr() {
+      return new Date().toISOString().slice(0, 10);
+    }
+
+    function parseDate(str) {
+      const [y, m, d] = str.split('-').map(Number);
+      return new Date(y, m - 1, d);
+    }
+
+    function daysBetween(from, to) {
+      const a = parseDate(from);
+      const b = parseDate(to);
+      return Math.round((b - a) / 86400000);
+    }
+
+    function getWeekKey() {
+      const now = new Date();
+      const jan1 = new Date(now.getFullYear(), 0, 1);
+      const week = Math.ceil(((now - jan1) / 86400000 + jan1.getDay() + 1) / 7);
+      return `${now.getFullYear()}-W${week}`;
+    }
+
+    function todayDayIndex() {
+      return new Date().getDay(); // 0=Sunday
+    }
+
+    function taskStatus(dateStr, done) {
+      if (done) return '';
+      const diff = daysBetween(todayStr(), dateStr);
+      if (diff < 0) return 'overdue';
+      if (diff <= 3) return 'soon';
+      return '';
+    }
+
+    function nextEventDate(eventDate) {
+      const today = parseDate(todayStr());
+      const [y, m, d] = eventDate.split('-').map(Number);
+      let next = new Date(today.getFullYear(), m - 1, d);
+      if (next < today) next = new Date(today.getFullYear() + 1, m - 1, d);
+      return next.toISOString().slice(0, 10);
+    }
+
+    function daysUntilEvent(eventDate) {
+      const next = nextEventDate(eventDate);
+      return daysBetween(todayStr(), next);
+    }
+
+    function formatDate(str) {
+      const [y, m, d] = str.split('-');
+      return `${d}.${m}.${y}`;
+    }
+
+    // Habits: days[0..6]=schedule, days[7..13]=completions this week
+    function normalizeHabitDays(arr) {
+      const a = Array.isArray(arr) ? [...arr] : [];
+      while (a.length < 14) a.push(false);
+      return a.slice(0, 14);
+    }
+
+    function getHabitSchedule(days) { return normalizeHabitDays(days).slice(0, 7); }
+    function getHabitCompletions(days) { return normalizeHabitDays(days).slice(7, 14); }
+
+    function habitWeekProgress(days) {
+      const schedule = getHabitSchedule(days);
+      const completions = getHabitCompletions(days);
+      let done = 0, total = 0;
+      for (let i = 0; i < 7; i++) {
+        if (schedule[i]) { total++; if (completions[i]) done++; }
+      }
+      return { done, total };
+    }
+
+    function isHabitScheduledToday(days) {
+      return getHabitSchedule(days)[todayDayIndex()];
+    }
+
+    function isHabitDoneToday(days) {
+      return getHabitCompletions(days)[todayDayIndex()];
+    }
+
+    // --- UI helpers ---
+    function showError(msg) {
+      const el = document.getElementById('errorBanner');
+      el.textContent = msg;
+      el.style.display = 'block';
+      setTimeout(() => { el.style.display = 'none'; }, 5000);
+    }
+
+    function navigate(page) {
+      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+      document.getElementById('page-' + page).classList.add('active');
+      document.querySelector(`[data-page="${page}"]`).classList.add('active');
+      closeSidebar();
+      render();
+    }
+
+    function closeSidebar() {
+      document.getElementById('sidebar').classList.remove('open');
+      document.getElementById('overlay').classList.remove('open');
+    }
+
+    // --- Data loading ---
+    async function loadAll() {
+      try {
+        const [tRes, eRes, hRes] = await Promise.all([
+          supabase.from('tasks').select('*').order('date', { ascending: true }),
+          supabase.from('events').select('*').order('date', { ascending: true }),
+          supabase.from('habits').select('*').order('created_at', { ascending: true }),
+        ]);
+        if (tRes.error) throw tRes.error;
+        if (eRes.error) throw eRes.error;
+        if (hRes.error) throw hRes.error;
+        tasks = tRes.data || [];
+        events = eRes.data || [];
+        habits = (hRes.data || []).map(h => ({ ...h, days: normalizeHabitDays(h.days) }));
+      } catch (err) {
+        showError('მონაცემების ჩატვირთვა ვერ მოხერხდა: ' + err.message);
+      }
+    }
+
+    // --- Task actions ---
+    async function addTask(text, date, priority) {
+      const { error } = await supabase.from('tasks').insert({ text, date, priority, done: false });
+      if (error) throw error;
+      await loadAll();
+      render();
+    }
+
+    async function toggleTask(id, done) {
+      const { error } = await supabase.from('tasks').update({ done }).eq('id', id);
+      if (error) throw error;
+      const t = tasks.find(x => x.id === id);
+      if (t) t.done = done;
+      render();
+    }
+
+    async function deleteTask(id) {
+      const { error } = await supabase.from('tasks').delete().eq('id', id);
+      if (error) throw error;
+      tasks = tasks.filter(t => t.id !== id);
+      render();
+    }
+
+    // --- Event actions ---
+    async function addEvent(text, date, type) {
+      const { error } = await supabase.from('events').insert({ text, date, type });
+      if (error) throw error;
+      await loadAll();
+      render();
+    }
+
+    async function deleteEvent(id) {
+      const { error } = await supabase.from('events').delete().eq('id', id);
+      if (error) throw error;
+      events = events.filter(e => e.id !== id);
+      render();
+    }
+
+    // --- Habit actions ---
+    async function addHabit(text, schedule) {
+      const days = [...schedule, false, false, false, false, false, false, false];
+      const { error } = await supabase.from('habits').insert({ text, days });
+      if (error) throw error;
+      await loadAll();
+      render();
+    }
+
+    async function toggleHabitDay(habitId, dayIndex) {
+      const habit = habits.find(h => h.id === habitId);
+      if (!habit) return;
+      const days = normalizeHabitDays(habit.days);
+      if (!days[dayIndex]) return;
+      days[7 + dayIndex] = !days[7 + dayIndex];
+      const { error } = await supabase.from('habits').update({ days }).eq('id', habitId);
+      if (error) throw error;
+      habit.days = days;
+      render();
+    }
+
+    async function deleteHabit(id) {
+      const { error } = await supabase.from('habits').delete().eq('id', id);
+      if (error) throw error;
+      habits = habits.filter(h => h.id !== id);
+      render();
+    }
+
+    // --- Render functions ---
+    function renderTaskCard(task, showDone = false) {
+      if (task.done && !showDone) return '';
+      const status = taskStatus(task.date, task.done);
+      const cls = ['card', status, task.done ? 'done' : ''].filter(Boolean).join(' ');
+      return `
+        <div class="${cls}">
+          <input type="checkbox" ${task.done ? 'checked' : ''} onchange="toggleTask('${task.id}', this.checked)">
+          <div class="card-body">
+            <div class="card-text">${esc(task.text)}
+              <span class="badge ${PRIORITY_BADGE[task.priority] || 'badge-medium'}">${PRIORITY_LABELS[task.priority] || task.priority}</span>
+            </div>
+            <div class="card-meta">📅 ${formatDate(task.date)}</div>
+          </div>
+          <button class="btn-delete" onclick="deleteTask('${task.id}')" title="წაშლა">✕</button>
+        </div>`;
+    }
+
+    function renderEventCard(ev) {
+      const days = daysUntilEvent(ev.date);
+      let daysClass = 'days-left';
+      let daysText;
+      if (days === 0) { daysText = 'დღეს!'; daysClass += ' today'; }
+      else if (days === 1) daysText = 'ხვალ';
+      else daysText = `${days} დღეში`;
+      return `
+        <div class="card">
+          <div class="card-body">
+            <div class="card-text">${esc(ev.text)}
+              <span class="badge ${TYPE_BADGE[ev.type] || 'badge-other'}">${TYPE_LABELS[ev.type] || ev.type}</span>
+            </div>
+            <div class="card-meta">📅 ${formatDate(ev.date)} · <span class="${daysClass}">${daysText}</span></div>
+          </div>
+          <button class="btn-delete" onclick="deleteEvent('${ev.id}')" title="წაშლა">✕</button>
+        </div>`;
+    }
+
+    function renderHabitCard(habit, dashboard = false) {
+      const schedule = getHabitSchedule(habit.days);
+      const completions = getHabitCompletions(habit.days);
+      const { done, total } = habitWeekProgress(habit.days);
+      const todayIdx = todayDayIndex();
+
+      let scheduleHtml = '';
+      if (!dashboard) {
+        scheduleHtml = `<div class="habit-schedule">${DAY_LABELS.map((lbl, i) => {
+          const sched = schedule[i];
+          const comp = completions[i];
+          let cls = 'day-dot';
+          if (sched) cls += ' scheduled';
+          if (sched && comp) cls += ' done';
+          const click = sched ? `onclick="toggleHabitDay('${habit.id}', ${i})"` : '';
+          return `<div class="${cls}" ${click} title="${lbl}">${lbl}</div>`;
+        }).join('')}</div>`;
+      } else {
+        const todayDone = isHabitDoneToday(habit.days);
+        scheduleHtml = `
+          <div class="habit-schedule">
+            <div class="day-dot scheduled ${todayDone ? 'done' : ''}"
+                 onclick="toggleHabitDay('${habit.id}', ${todayIdx})"
+                 title="დღევანდ">${DAY_LABELS[todayIdx]}</div>
+          </div>`;
+      }
+
+      return `
+        <div class="card habit-card">
+          <div class="card-body">
+            <div class="card-text">${esc(habit.text)}</div>
+            <div class="progress">ამ კვირას: <strong>${done}/${total || 7}</strong></div>
+            ${scheduleHtml}
+          </div>
+          ${dashboard ? '' : `<button class="btn-delete" onclick="deleteHabit('${habit.id}')" title="წაშლა">✕</button>`}
+        </div>`;
+    }
+
+    function esc(str) {
+      const d = document.createElement('div');
+      d.textContent = str;
+      return d.innerHTML;
+    }
+
+    function render() {
+      const activeTasks = tasks.filter(t => !t.done);
+      const overdue = activeTasks.filter(t => taskStatus(t.date, false) === 'overdue');
+      const upcomingEvents = events
+        .map(e => ({ ...e, daysLeft: daysUntilEvent(e.date) }))
+        .filter(e => e.daysLeft <= 14)
+        .sort((a, b) => a.daysLeft - b.daysLeft);
+      const todayHabits = habits.filter(h => isHabitScheduledToday(h.days));
+
+      // Stats
+      document.getElementById('stats').innerHTML = `
+        <div class="stat-card"><div class="num">${activeTasks.length}</div><div class="label">მიმდინარე</div></div>
+        <div class="stat-card"><div class="num">${overdue.length}</div><div class="label">ვადაგადასული</div></div>
+        <div class="stat-card"><div class="num">${upcomingEvents.length}</div><div class="label">14 დღეში</div></div>
+        <div class="stat-card"><div class="num">${habits.length}</div><div class="label">ჩვევები</div></div>`;
+
+      // Dashboard tasks
+      const dashTasks = activeTasks.sort((a, b) => a.date.localeCompare(b.date));
+      document.getElementById('dash-tasks').innerHTML = dashTasks.length
+        ? dashTasks.map(t => renderTaskCard(t)).join('')
+        : '<p class="empty">ამოცანები არ არის</p>';
+
+      // Dashboard events
+      document.getElementById('dash-events').innerHTML = upcomingEvents.length
+        ? upcomingEvents.map(e => renderEventCard(e)).join('')
+        : '<p class="empty">მოახლოებული თარიღები არ არის</p>';
+
+      // Dashboard habits
+      document.getElementById('dash-habits').innerHTML = todayHabits.length
+        ? todayHabits.map(h => renderHabitCard(h, true)).join('')
+        : '<p class="empty">დღევანდელი ჩვევები არ არის</p>';
+
+      // All tasks
+      const allSorted = [...tasks].sort((a, b) => {
+        if (a.done !== b.done) return a.done ? 1 : -1;
+        return a.date.localeCompare(b.date);
+      });
+      document.getElementById('all-tasks-list').innerHTML = allSorted.length
+        ? allSorted.map(t => renderTaskCard(t, true)).join('')
+        : '<p class="empty">ამოცანები არ არის</p>';
+
+      // Habits list
+      document.getElementById('habits-list').innerHTML = habits.length
+        ? habits.map(h => renderHabitCard(h)).join('')
+        : '<p class="empty">ჩვევები არ არის</p>';
+    }
+
+    // --- Init day toggles for habit form ---
+    function initHabitDayToggles() {
+      const container = document.getElementById('habitDayToggles');
+      container.innerHTML = DAY_LABELS.map((lbl, i) => `
+        <label class="day-toggle">
+          <input type="checkbox" name="habitDay" value="${i}" checked>
+          <span>${lbl}</span>
+        </label>`).join('');
+    }
+
+    // --- Event listeners ---
+    document.querySelectorAll('.nav-item').forEach(btn => {
+      btn.addEventListener('click', () => navigate(btn.dataset.page));
+    });
+
+    document.getElementById('menuToggle').addEventListener('click', () => {
+      document.getElementById('sidebar').classList.toggle('open');
+      document.getElementById('overlay').classList.toggle('open');
+    });
+    document.getElementById('overlay').addEventListener('click', closeSidebar);
+
+    document.getElementById('taskForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = e.target.querySelector('.btn');
+      btn.disabled = true;
+      try {
+        await addTask(
+          document.getElementById('taskText').value.trim(),
+          document.getElementById('taskDate').value,
+          document.getElementById('taskPriority').value
+        );
+        e.target.reset();
+        navigate('dashboard');
+      } catch (err) {
+        showError('ამოცანის დამატება ვერ მოხერხდა: ' + err.message);
+      }
+      btn.disabled = false;
+    });
+
+    document.getElementById('eventForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = e.target.querySelector('.btn');
+      btn.disabled = true;
+      try {
+        await addEvent(
+          document.getElementById('eventText').value.trim(),
+          document.getElementById('eventDate').value,
+          document.getElementById('eventType').value
+        );
+        e.target.reset();
+        navigate('dashboard');
+      } catch (err) {
+        showError('თარიღის დამატება ვერ მოხერხდა: ' + err.message);
+      }
+      btn.disabled = false;
+    });
+
+    document.getElementById('habitForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = e.target.querySelector('.btn');
+      btn.disabled = true;
+      try {
+        const schedule = DAY_LABELS.map((_, i) => {
+          const cb = document.querySelector(`input[name="habitDay"][value="${i}"]`);
+          return cb ? cb.checked : false;
+        });
+        if (!schedule.some(Boolean)) {
+          showError('აირჩიეთ მინიმუმ ერთი დღე');
+          btn.disabled = false;
+          return;
+        }
+        await addHabit(document.getElementById('habitText').value.trim(), schedule);
+        e.target.reset();
+        document.querySelectorAll('input[name="habitDay"]').forEach(cb => cb.checked = true);
+        render();
+      } catch (err) {
+        showError('ჩვევის დამატება ვერ მოხერხდა: ' + err.message);
+      }
+      btn.disabled = false;
+    });
+
+    // Expose for inline handlers
+    window.toggleTask = async (id, done) => {
+      try { await toggleTask(id, done); } catch (err) { showError(err.message); }
+    };
+    window.deleteTask = async (id) => {
+      if (!confirm('წავშალოთ ეს ამოცანა?')) return;
+      try { await deleteTask(id); } catch (err) { showError(err.message); }
+    };
+    window.deleteEvent = async (id) => {
+      if (!confirm('წავშალოთ ეს თარიღი?')) return;
+      try { await deleteEvent(id); } catch (err) { showError(err.message); }
+    };
+    window.deleteHabit = async (id) => {
+      if (!confirm('წავშალოთ ეს ჩვევა?')) return;
+      try { await deleteHabit(id); } catch (err) { showError(err.message); }
+    };
+    window.toggleHabitDay = async (id, dayIndex) => {
+      try { await toggleHabitDay(id, dayIndex); } catch (err) { showError(err.message); }
+    };
+
+    // --- Boot ---
+    initHabitDayToggles();
+    loadAll().then(() => render());
+  </script>
+</body>
+</html>
