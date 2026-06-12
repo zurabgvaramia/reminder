@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>პერსონალური რემაინდერი</title>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -521,11 +520,44 @@
     </main>
   </div>
 
+  <script
+    src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"
+    onerror="console.error('[Supabase] CDN ვერ ჩაიტვირთა'); document.getElementById('errorBanner').textContent='Supabase ბიბლიოთეკა ვერ ჩაიტვირთა — შეამოწმეთ ინტერნეტი'; document.getElementById('errorBanner').style.display='block';"
+  ></script>
   <script>
-    const SUPABASE_URL = 'https://bihjzpebagywsgwakvde.supabase.co';
-    const SUPABASE_KEY = 'sb_publishable_Sd9qIw8j9MPjleM9lHSNsA_dy2NvUf_';
+    let db = null;
 
-    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    function initSupabaseClient() {
+      console.log('[Supabase] CDN loaded, global supabase:', window.supabase);
+
+      if (!window.supabase || typeof window.supabase.createClient !== 'function') {
+        throw new Error('Supabase ბიბლიოთეკა ვერ ჩაიტვირთა. გადატვირთეთ გვერდი ან შეამოწმეთ ინტერნეტი.');
+      }
+
+      const { createClient } = supabase;
+      db = createClient(
+        'https://bihjzpebagywsgwakvde.supabase.co',
+        'sb_publishable_Sd9qIw8j9MPjleM9lHSNsA_dy2NvUf_'
+      );
+
+      console.log('[Supabase] Client initialized:', db);
+      return db;
+    }
+
+    async function testConnection() {
+      console.log('[Supabase] Testing connection...');
+      const { data, error, count } = await db
+        .from('tasks')
+        .select('*', { count: 'exact' });
+
+      if (error) {
+        console.error('[Supabase] Connection test failed:', error);
+        throw error;
+      }
+
+      console.log('[Supabase] Connection OK. Tasks count:', count, 'Data:', data);
+      return true;
+    }
 
     const DAY_LABELS = ['ო', 'ს', 'მ', 'ხ', 'პ', 'შ', 'კ'];
     const PRIORITY_LABELS = { high: 'მნიშვნელოვანი', medium: 'ჩვეულებრივი', low: 'დაბალი' };
@@ -620,10 +652,15 @@
 
     // --- UI helpers ---
     function showError(msg) {
+      console.error('[App Error]', msg);
       const el = document.getElementById('errorBanner');
       el.textContent = msg;
       el.style.display = 'block';
-      setTimeout(() => { el.style.display = 'none'; }, 5000);
+      setTimeout(() => { el.style.display = 'none'; }, 8000);
+    }
+
+    function ensureClient() {
+      if (!db) throw new Error('Supabase კლიენტი ჯერ არ არის ინიციალიზებული');
     }
 
     function navigate(page) {
@@ -642,33 +679,52 @@
 
     // --- Data loading ---
     async function loadAll() {
+      ensureClient();
+      console.log('[Data] Loading all tables...');
+
       try {
         const [tRes, eRes, hRes] = await Promise.all([
-          supabase.from('tasks').select('*').order('date', { ascending: true }),
-          supabase.from('events').select('*').order('date', { ascending: true }),
-          supabase.from('habits').select('*').order('created_at', { ascending: true }),
+          db.from('tasks').select('*').order('date', { ascending: true }),
+          db.from('events').select('*').order('date', { ascending: true }),
+          db.from('habits').select('*').order('created_at', { ascending: true }),
         ]);
+
+        console.log('[Data] tasks response:', tRes);
+        console.log('[Data] events response:', eRes);
+        console.log('[Data] habits response:', hRes);
+
         if (tRes.error) throw tRes.error;
         if (eRes.error) throw eRes.error;
         if (hRes.error) throw hRes.error;
+
         tasks = tRes.data || [];
         events = eRes.data || [];
         habits = (hRes.data || []).map(h => ({ ...h, days: normalizeHabitDays(h.days) }));
+
+        console.log('[Data] Loaded:', { tasks: tasks.length, events: events.length, habits: habits.length });
       } catch (err) {
-        showError('მონაცემების ჩატვირთვა ვერ მოხერხდა: ' + err.message);
+        console.error('[Data] loadAll failed:', err);
+        showError('მონაცემების ჩატვირთვა ვერ მოხერხდა: ' + (err.message || err));
+        throw err;
       }
     }
 
     // --- Task actions ---
     async function addTask(text, date, priority) {
-      const { error } = await supabase.from('tasks').insert({ text, date, priority, done: false });
+      ensureClient();
+      console.log('[Tasks] Adding:', { text, date, priority });
+      const { data, error } = await db.from('tasks').insert({ text, date, priority, done: false }).select();
+      console.log('[Tasks] Insert response:', { data, error });
       if (error) throw error;
       await loadAll();
       render();
     }
 
     async function toggleTask(id, done) {
-      const { error } = await supabase.from('tasks').update({ done }).eq('id', id);
+      ensureClient();
+      console.log('[Tasks] Toggle:', { id, done });
+      const { data, error } = await db.from('tasks').update({ done }).eq('id', id).select();
+      console.log('[Tasks] Update response:', { data, error });
       if (error) throw error;
       const t = tasks.find(x => x.id === id);
       if (t) t.done = done;
@@ -676,7 +732,10 @@
     }
 
     async function deleteTask(id) {
-      const { error } = await supabase.from('tasks').delete().eq('id', id);
+      ensureClient();
+      console.log('[Tasks] Deleting:', id);
+      const { error } = await db.from('tasks').delete().eq('id', id);
+      console.log('[Tasks] Delete error:', error);
       if (error) throw error;
       tasks = tasks.filter(t => t.id !== id);
       render();
@@ -684,14 +743,20 @@
 
     // --- Event actions ---
     async function addEvent(text, date, type) {
-      const { error } = await supabase.from('events').insert({ text, date, type });
+      ensureClient();
+      console.log('[Events] Adding:', { text, date, type });
+      const { data, error } = await db.from('events').insert({ text, date, type }).select();
+      console.log('[Events] Insert response:', { data, error });
       if (error) throw error;
       await loadAll();
       render();
     }
 
     async function deleteEvent(id) {
-      const { error } = await supabase.from('events').delete().eq('id', id);
+      ensureClient();
+      console.log('[Events] Deleting:', id);
+      const { error } = await db.from('events').delete().eq('id', id);
+      console.log('[Events] Delete error:', error);
       if (error) throw error;
       events = events.filter(e => e.id !== id);
       render();
@@ -699,27 +764,36 @@
 
     // --- Habit actions ---
     async function addHabit(text, schedule) {
+      ensureClient();
       const days = [...schedule, false, false, false, false, false, false, false];
-      const { error } = await supabase.from('habits').insert({ text, days });
+      console.log('[Habits] Adding:', { text, days });
+      const { data, error } = await db.from('habits').insert({ text, days }).select();
+      console.log('[Habits] Insert response:', { data, error });
       if (error) throw error;
       await loadAll();
       render();
     }
 
     async function toggleHabitDay(habitId, dayIndex) {
+      ensureClient();
       const habit = habits.find(h => h.id === habitId);
       if (!habit) return;
       const days = normalizeHabitDays(habit.days);
       if (!days[dayIndex]) return;
       days[7 + dayIndex] = !days[7 + dayIndex];
-      const { error } = await supabase.from('habits').update({ days }).eq('id', habitId);
+      console.log('[Habits] Toggle day:', { habitId, dayIndex, days });
+      const { data, error } = await db.from('habits').update({ days }).eq('id', habitId).select();
+      console.log('[Habits] Update response:', { data, error });
       if (error) throw error;
       habit.days = days;
       render();
     }
 
     async function deleteHabit(id) {
-      const { error } = await supabase.from('habits').delete().eq('id', id);
+      ensureClient();
+      console.log('[Habits] Deleting:', id);
+      const { error } = await db.from('habits').delete().eq('id', id);
+      console.log('[Habits] Delete error:', error);
       if (error) throw error;
       habits = habits.filter(h => h.id !== id);
       render();
@@ -864,17 +938,18 @@
     }
 
     // --- Event listeners ---
-    document.querySelectorAll('.nav-item').forEach(btn => {
-      btn.addEventListener('click', () => navigate(btn.dataset.page));
-    });
+    function setupEventListeners() {
+      document.querySelectorAll('.nav-item').forEach(btn => {
+        btn.addEventListener('click', () => navigate(btn.dataset.page));
+      });
 
-    document.getElementById('menuToggle').addEventListener('click', () => {
-      document.getElementById('sidebar').classList.toggle('open');
-      document.getElementById('overlay').classList.toggle('open');
-    });
-    document.getElementById('overlay').addEventListener('click', closeSidebar);
+      document.getElementById('menuToggle').addEventListener('click', () => {
+        document.getElementById('sidebar').classList.toggle('open');
+        document.getElementById('overlay').classList.toggle('open');
+      });
+      document.getElementById('overlay').addEventListener('click', closeSidebar);
 
-    document.getElementById('taskForm').addEventListener('submit', async (e) => {
+      document.getElementById('taskForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = e.target.querySelector('.btn');
       btn.disabled = true;
@@ -890,9 +965,9 @@
         showError('ამოცანის დამატება ვერ მოხერხდა: ' + err.message);
       }
       btn.disabled = false;
-    });
+      });
 
-    document.getElementById('eventForm').addEventListener('submit', async (e) => {
+      document.getElementById('eventForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = e.target.querySelector('.btn');
       btn.disabled = true;
@@ -908,9 +983,9 @@
         showError('თარიღის დამატება ვერ მოხერხდა: ' + err.message);
       }
       btn.disabled = false;
-    });
+      });
 
-    document.getElementById('habitForm').addEventListener('submit', async (e) => {
+      document.getElementById('habitForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = e.target.querySelector('.btn');
       btn.disabled = true;
@@ -932,31 +1007,58 @@
         showError('ჩვევის დამატება ვერ მოხერხდა: ' + err.message);
       }
       btn.disabled = false;
-    });
+      });
+    }
 
-    // Expose for inline handlers
-    window.toggleTask = async (id, done) => {
-      try { await toggleTask(id, done); } catch (err) { showError(err.message); }
-    };
-    window.deleteTask = async (id) => {
-      if (!confirm('წავშალოთ ეს ამოცანა?')) return;
-      try { await deleteTask(id); } catch (err) { showError(err.message); }
-    };
-    window.deleteEvent = async (id) => {
-      if (!confirm('წავშალოთ ეს თარიღი?')) return;
-      try { await deleteEvent(id); } catch (err) { showError(err.message); }
-    };
-    window.deleteHabit = async (id) => {
-      if (!confirm('წავშალოთ ეს ჩვევა?')) return;
-      try { await deleteHabit(id); } catch (err) { showError(err.message); }
-    };
-    window.toggleHabitDay = async (id, dayIndex) => {
-      try { await toggleHabitDay(id, dayIndex); } catch (err) { showError(err.message); }
-    };
+    function exposeGlobalHandlers() {
+      window.toggleTask = async (id, done) => {
+        try { await toggleTask(id, done); } catch (err) { showError(err.message); }
+      };
+      window.deleteTask = async (id) => {
+        if (!confirm('წავშალოთ ეს ამოცანა?')) return;
+        try { await deleteTask(id); } catch (err) { showError(err.message); }
+      };
+      window.deleteEvent = async (id) => {
+        if (!confirm('წავშალოთ ეს თარიღი?')) return;
+        try { await deleteEvent(id); } catch (err) { showError(err.message); }
+      };
+      window.deleteHabit = async (id) => {
+        if (!confirm('წავშალოთ ეს ჩვევა?')) return;
+        try { await deleteHabit(id); } catch (err) { showError(err.message); }
+      };
+      window.toggleHabitDay = async (id, dayIndex) => {
+        try { await toggleHabitDay(id, dayIndex); } catch (err) { showError(err.message); }
+      };
+    }
 
     // --- Boot ---
-    initHabitDayToggles();
-    loadAll().then(() => render());
+    async function boot() {
+      console.log('[App] Boot started');
+      try {
+        initHabitDayToggles();
+        initSupabaseClient();
+        await testConnection();
+        await loadAll();
+        render();
+        console.log('[App] Boot complete');
+      } catch (err) {
+        console.error('[App] Boot failed:', err);
+        showError('აპის გაშვება ვერ მოხერხდა: ' + (err.message || err));
+      }
+    }
+
+    async function startApp() {
+      console.log('[App] Starting...');
+      setupEventListeners();
+      exposeGlobalHandlers();
+      await boot();
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => { startApp(); });
+    } else {
+      startApp();
+    }
   </script>
 </body>
 </html>
