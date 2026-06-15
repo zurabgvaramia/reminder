@@ -184,7 +184,12 @@
       transition: border-color .15s;
     }
 
-    .card.overdue { border-color: var(--danger); }
+    .card.overdue {
+      border-color: var(--danger);
+      background: #fee2e2;
+    }
+    .card.overdue .card-text { color: #1c1917; }
+    .card.overdue .card-meta { color: #57534e; }
     .card.soon { border-color: var(--warning); }
     .card.done { opacity: .55; }
 
@@ -248,6 +253,51 @@
     }
 
     .btn-delete:hover { color: var(--danger); background: #fee2e2; }
+
+    /* Date groups */
+    .date-group { margin-bottom: .75rem; }
+
+    .date-group-header {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      padding: .6rem .85rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      cursor: pointer;
+      font-size: .9rem;
+      font-weight: 600;
+      color: var(--text);
+      text-align: left;
+    }
+
+    .date-group-header:hover { background: #ececea; }
+
+    .date-group-arrow {
+      font-size: .65rem;
+      color: var(--muted);
+      transition: transform .15s;
+      flex-shrink: 0;
+    }
+
+    .date-group.collapsed .date-group-arrow { transform: rotate(-90deg); }
+
+    .date-group-count {
+      margin-left: auto;
+      font-size: .75rem;
+      font-weight: 500;
+      color: var(--muted);
+      background: var(--surface);
+      padding: .1rem .45rem;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+    }
+
+    .date-group-body { padding-top: .5rem; }
+
+    .date-group.collapsed .date-group-body { display: none; }
 
     /* Forms */
     .form-card {
@@ -643,6 +693,10 @@
     let tasks = [];
     let events = [];
     let habits = [];
+    const collapsedGroups = new Set();
+
+    const MONTHS_KA = ['იანვარი', 'თებერვალი', 'მარტი', 'აპრილი', 'მაისი', 'ივნისი',
+      'ივლისი', 'აგვისტო', 'სექტემბერი', 'ოქტომბერი', 'ნოემბერი', 'დეკემბერი'];
 
     // --- Date helpers ---
     function todayStr() {
@@ -695,6 +749,64 @@
     function formatDate(str) {
       const [y, m, d] = str.split('-');
       return `${d}.${m}.${y}`;
+    }
+
+    function getDateGroupLabel(dateStr) {
+      const diff = daysBetween(todayStr(), dateStr);
+      if (diff === 0) return 'დღეს';
+      if (diff === 1) return 'ხვალ';
+      if (diff === -1) return 'გუშინ';
+      const [y, m, d] = dateStr.split('-').map(Number);
+      return `${d} ${MONTHS_KA[m - 1]}`;
+    }
+
+    function getUpcomingEventStat() {
+      const upcoming = events
+        .map(e => ({ ...e, daysLeft: daysUntilEvent(e.date) }))
+        .filter(e => e.daysLeft <= 14);
+
+      if (!upcoming.length) {
+        return { num: 0, label: 'მოახლოებული' };
+      }
+
+      upcoming.sort((a, b) => a.daysLeft - b.daysLeft);
+      const nearestType = upcoming[0].type;
+      const count = upcoming.filter(e => e.type === nearestType).length;
+      return { num: count, label: TYPE_LABELS[nearestType] || nearestType };
+    }
+
+    function renderTaskGroups(taskList, showDone = false) {
+      const filtered = showDone ? taskList : taskList.filter(t => !t.done);
+      if (!filtered.length) return '';
+
+      const sorted = [...filtered].sort((a, b) => {
+        if (a.done !== b.done) return a.done ? 1 : -1;
+        return a.date.localeCompare(b.date);
+      });
+
+      const groups = new Map();
+      for (const t of sorted) {
+        if (!groups.has(t.date)) groups.set(t.date, []);
+        groups.get(t.date).push(t);
+      }
+
+      let html = '';
+      for (const [date, groupTasks] of groups) {
+        const label = getDateGroupLabel(date);
+        const collapsed = collapsedGroups.has(date);
+        html += `
+          <div class="date-group${collapsed ? ' collapsed' : ''}" data-date="${date}">
+            <button type="button" class="date-group-header">
+              <span class="date-group-arrow">▼</span>
+              <span>${label}</span>
+              <span class="date-group-count">${groupTasks.length}</span>
+            </button>
+            <div class="date-group-body">
+              ${groupTasks.map(t => renderTaskCard(t, showDone)).join('')}
+            </div>
+          </div>`;
+      }
+      return html;
     }
 
     // Habits: days[0..6]=schedule, days[7..13]=completions this week
@@ -963,18 +1075,19 @@
         .filter(e => e.daysLeft <= 14)
         .sort((a, b) => a.daysLeft - b.daysLeft);
       const todayHabits = habits.filter(h => isHabitScheduledToday(h.days));
+      const upcomingStat = getUpcomingEventStat();
 
       // Stats
       document.getElementById('stats').innerHTML = `
         <div class="stat-card"><div class="num">${activeTasks.length}</div><div class="label">მიმდინარე</div></div>
         <div class="stat-card"><div class="num">${overdue.length}</div><div class="label">ვადაგადასული</div></div>
-        <div class="stat-card"><div class="num">${upcomingEvents.length}</div><div class="label">14 დღეში</div></div>
+        <div class="stat-card"><div class="num">${upcomingStat.num}</div><div class="label">${upcomingStat.label}</div></div>
         <div class="stat-card"><div class="num">${habits.length}</div><div class="label">ჩვევები</div></div>`;
 
-      // Dashboard tasks
-      const dashTasks = activeTasks.sort((a, b) => a.date.localeCompare(b.date));
+      // Dashboard tasks (grouped by date)
+      const dashTasks = activeTasks;
       document.getElementById('dash-tasks').innerHTML = dashTasks.length
-        ? dashTasks.map(t => renderTaskCard(t)).join('')
+        ? renderTaskGroups(dashTasks)
         : '<p class="empty">ამოცანები არ არის</p>';
 
       // Dashboard events
@@ -987,13 +1100,9 @@
         ? todayHabits.map(h => renderHabitCard(h, true)).join('')
         : '<p class="empty">დღევანდელი ჩვევები არ არის</p>';
 
-      // All tasks
-      const allSorted = [...tasks].sort((a, b) => {
-        if (a.done !== b.done) return a.done ? 1 : -1;
-        return a.date.localeCompare(b.date);
-      });
-      document.getElementById('all-tasks-list').innerHTML = allSorted.length
-        ? allSorted.map(t => renderTaskCard(t, true)).join('')
+      // All tasks (grouped by date)
+      document.getElementById('all-tasks-list').innerHTML = tasks.length
+        ? renderTaskGroups(tasks, true)
         : '<p class="empty">ამოცანები არ არის</p>';
 
       // Habits list
@@ -1037,6 +1146,19 @@
       });
 
       appRoot.addEventListener('click', async (e) => {
+        const groupHeader = e.target.closest('.date-group-header');
+        if (groupHeader) {
+          const group = groupHeader.closest('.date-group');
+          const date = group.dataset.date;
+          group.classList.toggle('collapsed');
+          if (group.classList.contains('collapsed')) {
+            collapsedGroups.add(date);
+          } else {
+            collapsedGroups.delete(date);
+          }
+          return;
+        }
+
         const taskBtn = e.target.closest('[data-delete-task]');
         if (taskBtn) {
           if (!confirm('წავშალოთ ეს ამოცანა?')) return;
