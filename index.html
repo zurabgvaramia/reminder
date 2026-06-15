@@ -3,7 +3,6 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="apple-mobile-web-app-capable" content="yes">
   <title>პერსონალური რემაინდერი</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -34,6 +33,7 @@
 
     .app { display: flex; min-height: 100vh; }
 
+    /* Sidebar */
     .sidebar {
       width: var(--sidebar-w);
       background: var(--surface);
@@ -100,6 +100,7 @@
       z-index: 90;
     }
 
+    /* Main */
     .main {
       flex: 1;
       margin-left: var(--sidebar-w);
@@ -116,6 +117,7 @@
       margin-bottom: 1.25rem;
     }
 
+    /* Stats */
     .stats {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
@@ -144,6 +146,7 @@
       margin-top: .15rem;
     }
 
+    /* Sections */
     .section {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -168,6 +171,7 @@
       padding: .5rem 0;
     }
 
+    /* Cards */
     .card {
       display: flex;
       align-items: flex-start;
@@ -245,6 +249,7 @@
 
     .btn-delete:hover { color: var(--danger); background: #fee2e2; }
 
+    /* Forms */
     .form-card {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -301,6 +306,7 @@
     .btn:hover { background: var(--accent-hover); }
     .btn:disabled { opacity: .5; cursor: not-allowed; }
 
+    /* Habit days */
     .day-toggles {
       display: flex;
       gap: .35rem;
@@ -381,20 +387,7 @@
       display: none;
     }
 
-    .notif-toast {
-      background: #dcfce7;
-      color: #166534;
-      border: 1px solid #bbf7d0;
-      padding: .75rem 1rem;
-      border-radius: var(--radius);
-      margin-bottom: 1rem;
-      font-size: .9rem;
-      font-weight: 500;
-      display: none;
-    }
-
-    .notif-toast.visible { display: block; }
-
+    /* Responsive */
     @media (max-width: 768px) {
       .sidebar {
         transform: translateX(-100%);
@@ -410,6 +403,7 @@
       .stats { grid-template-columns: repeat(2, 1fr); }
     }
 
+    /* Auth gate */
     .auth-gate {
       position: fixed;
       inset: 0;
@@ -504,8 +498,8 @@
 
     <main class="main">
       <div class="error-banner" id="errorBanner"></div>
-      <div class="notif-toast" id="notifToast">შეტყობინებები ჩართულია ✓</div>
 
+      <!-- Dashboard -->
       <div class="page active" id="page-dashboard">
         <h1 class="page-title">დეშბორდი</h1>
         <div class="stats" id="stats"></div>
@@ -526,6 +520,7 @@
         </div>
       </div>
 
+      <!-- New Task -->
       <div class="page" id="page-new-task">
         <h1 class="page-title">ახალი ამოცანა</h1>
         <form class="form-card" id="taskForm">
@@ -549,6 +544,7 @@
         </form>
       </div>
 
+      <!-- New Event -->
       <div class="page" id="page-new-event">
         <h1 class="page-title">ახალი თარიღი</h1>
         <form class="form-card" id="eventForm">
@@ -573,6 +569,7 @@
         </form>
       </div>
 
+      <!-- Habits -->
       <div class="page" id="page-habits">
         <h1 class="page-title">ჩვევები</h1>
         <form class="form-card" id="habitForm" style="margin-bottom:1.5rem">
@@ -589,6 +586,7 @@
         <div id="habits-list"></div>
       </div>
 
+      <!-- All Tasks -->
       <div class="page" id="page-all-tasks">
         <h1 class="page-title">ყველა ამოცანა</h1>
         <div id="all-tasks-list"></div>
@@ -605,6 +603,8 @@
     let db = null;
 
     function initSupabaseClient() {
+      console.log('[Supabase] CDN loaded, global supabase:', window.supabase);
+
       if (!window.supabase || typeof window.supabase.createClient !== 'function') {
         throw new Error('Supabase ბიბლიოთეკა ვერ ჩაიტვირთა. გადატვირთეთ გვერდი ან შეამოწმეთ ინტერნეტი.');
       }
@@ -614,16 +614,23 @@
         'https://bihjzpebagywsgwakvde.supabase.co',
         'sb_publishable_Sd9qIw8j9MPjleM9lHSNsA_dy2NvUf_'
       );
+
+      console.log('[Supabase] Client initialized:', db);
       return db;
     }
 
     async function testConnection() {
-      const { error, count } = await db
+      console.log('[Supabase] Testing connection...');
+      const { data, error, count } = await db
         .from('tasks')
         .select('*', { count: 'exact' });
 
-      if (error) throw error;
-      console.log('[Supabase] Connection OK. Tasks count:', count);
+      if (error) {
+        console.error('[Supabase] Connection test failed:', error);
+        throw error;
+      }
+
+      console.log('[Supabase] Connection OK. Tasks count:', count, 'Data:', data);
       return true;
     }
 
@@ -637,6 +644,7 @@
     let events = [];
     let habits = [];
 
+    // --- Date helpers ---
     function todayStr() {
       return new Date().toISOString().slice(0, 10);
     }
@@ -652,8 +660,15 @@
       return Math.round((b - a) / 86400000);
     }
 
+    function getWeekKey() {
+      const now = new Date();
+      const jan1 = new Date(now.getFullYear(), 0, 1);
+      const week = Math.ceil(((now - jan1) / 86400000 + jan1.getDay() + 1) / 7);
+      return `${now.getFullYear()}-W${week}`;
+    }
+
     function todayDayIndex() {
-      return new Date().getDay();
+      return new Date().getDay(); // 0=Sunday
     }
 
     function taskStatus(dateStr, done) {
@@ -673,7 +688,8 @@
     }
 
     function daysUntilEvent(eventDate) {
-      return daysBetween(todayStr(), nextEventDate(eventDate));
+      const next = nextEventDate(eventDate);
+      return daysBetween(todayStr(), next);
     }
 
     function formatDate(str) {
@@ -681,6 +697,7 @@
       return `${d}.${m}.${y}`;
     }
 
+    // Habits: days[0..6]=schedule, days[7..13]=completions this week
     function normalizeHabitDays(arr) {
       const a = Array.isArray(arr) ? [...arr] : [];
       while (a.length < 14) a.push(false);
@@ -708,73 +725,13 @@
       return getHabitCompletions(days)[todayDayIndex()];
     }
 
+    // --- UI helpers ---
     function showError(msg) {
       console.error('[App Error]', msg);
       const el = document.getElementById('errorBanner');
       el.textContent = msg;
       el.style.display = 'block';
       setTimeout(() => { el.style.display = 'none'; }, 8000);
-    }
-
-    function showNotifEnabledToast() {
-      const el = document.getElementById('notifToast');
-      el.classList.add('visible');
-      setTimeout(() => el.classList.remove('visible'), 6000);
-    }
-
-    function notifyServiceWorker(type) {
-      if (!navigator.serviceWorker || !navigator.serviceWorker.controller) return;
-      navigator.serviceWorker.controller.postMessage({ type });
-    }
-
-    async function registerServiceWorker() {
-      if (!('serviceWorker' in navigator)) return null;
-
-      const reg = await navigator.serviceWorker.register('./sw.js', { scope: './' });
-      await navigator.serviceWorker.ready;
-
-      const sendSchedule = (worker) => {
-        if (worker) worker.postMessage({ type: 'SCHEDULE_DAILY' });
-      };
-
-      if (reg.active) {
-        sendSchedule(reg.active);
-      } else {
-        const worker = reg.installing || reg.waiting;
-        if (worker) {
-          worker.addEventListener('statechange', () => {
-            if (worker.state === 'activated') sendSchedule(reg.active);
-          });
-        }
-      }
-
-      navigator.serviceWorker.addEventListener('controllerchange', () => {
-        notifyServiceWorker('SCHEDULE_DAILY');
-      });
-
-      return reg;
-    }
-
-    async function setupNotifications(isFirstVisit) {
-      if (!('Notification' in window)) return;
-
-      let permission = Notification.permission;
-      const shouldAsk = isFirstVisit && permission === 'default';
-
-      if (shouldAsk) {
-        localStorage.setItem(NOTIF_ASKED_KEY, '1');
-        permission = await Notification.requestPermission();
-      }
-
-      if (permission !== 'granted') return;
-
-      if (shouldAsk) showNotifEnabledToast();
-
-      try {
-        await registerServiceWorker();
-      } catch (err) {
-        console.error('[SW] Registration failed:', err);
-      }
     }
 
     function ensureClient() {
@@ -795,109 +752,143 @@
       document.getElementById('overlay').classList.remove('open');
     }
 
+    // --- Data loading ---
     async function loadAll() {
       ensureClient();
+      console.log('[Data] Loading all tables...');
 
-      const [tRes, eRes, hRes] = await Promise.all([
-        db.from('tasks').select('*').order('date', { ascending: true }),
-        db.from('events').select('*').order('date', { ascending: true }),
-        db.from('habits').select('*').order('created_at', { ascending: true }),
-      ]);
+      try {
+        const [tRes, eRes, hRes] = await Promise.all([
+          db.from('tasks').select('*').order('date', { ascending: true }),
+          db.from('events').select('*').order('date', { ascending: true }),
+          db.from('habits').select('*').order('created_at', { ascending: true }),
+        ]);
 
-      if (tRes.error) throw tRes.error;
-      if (eRes.error) throw eRes.error;
-      if (hRes.error) throw hRes.error;
+        console.log('[Data] tasks response:', tRes);
+        console.log('[Data] events response:', eRes);
+        console.log('[Data] habits response:', hRes);
 
-      tasks = tRes.data || [];
-      events = eRes.data || [];
-      habits = (hRes.data || []).map(h => ({ ...h, days: normalizeHabitDays(h.days) }));
+        if (tRes.error) throw tRes.error;
+        if (eRes.error) throw eRes.error;
+        if (hRes.error) throw hRes.error;
+
+        tasks = tRes.data || [];
+        events = eRes.data || [];
+        habits = (hRes.data || []).map(h => ({ ...h, days: normalizeHabitDays(h.days) }));
+
+        console.log('[Data] Loaded:', { tasks: tasks.length, events: events.length, habits: habits.length });
+      } catch (err) {
+        console.error('[Data] loadAll failed:', err);
+        showError('მონაცემების ჩატვირთვა ვერ მოხერხდა: ' + (err.message || err));
+        throw err;
+      }
     }
 
+    // --- Task actions ---
     async function addTask(text, date, priority) {
       ensureClient();
-      const { error } = await db.from('tasks').insert({ text, date, priority, done: false }).select();
+      console.log('[Tasks] Adding:', { text, date, priority });
+      const { data, error } = await db.from('tasks').insert({ text, date, priority, done: false }).select();
+      console.log('[Tasks] Insert response:', { data, error });
       if (error) throw error;
       await loadAll();
       render();
     }
 
-    async function toggleTask(id, done) {
+    async function updateTaskDone(id, done) {
       ensureClient();
-      const { error } = await db.from('tasks').update({ done }).eq('id', id).select();
+      console.log('[Tasks] Toggle:', { id, done });
+      const { data, error } = await db.from('tasks').update({ done }).eq('id', id).select();
+      console.log('[Tasks] Update response:', { data, error });
       if (error) throw error;
-      const t = tasks.find(x => x.id === id);
+      const t = tasks.find(x => x.id == id);
       if (t) t.done = done;
       render();
     }
 
-    async function deleteTask(id) {
+    async function removeTask(id) {
       ensureClient();
+      console.log('[Tasks] Deleting:', id);
       const { error } = await db.from('tasks').delete().eq('id', id);
+      console.log('[Tasks] Delete error:', error);
       if (error) throw error;
       tasks = tasks.filter(t => t.id !== id);
       render();
     }
 
+    // --- Event actions ---
     async function addEvent(text, date, type) {
       ensureClient();
-      const { error } = await db.from('events').insert({ text, date, type }).select();
+      console.log('[Events] Adding:', { text, date, type });
+      const { data, error } = await db.from('events').insert({ text, date, type }).select();
+      console.log('[Events] Insert response:', { data, error });
       if (error) throw error;
       await loadAll();
       render();
     }
 
-    async function deleteEvent(id) {
+    async function removeEvent(id) {
       ensureClient();
+      console.log('[Events] Deleting:', id);
       const { error } = await db.from('events').delete().eq('id', id);
+      console.log('[Events] Delete error:', error);
       if (error) throw error;
       events = events.filter(e => e.id !== id);
       render();
     }
 
+    // --- Habit actions ---
     async function addHabit(text, schedule) {
       ensureClient();
       const days = [...schedule, false, false, false, false, false, false, false];
-      const { error } = await db.from('habits').insert({ text, days }).select();
+      console.log('[Habits] Adding:', { text, days });
+      const { data, error } = await db.from('habits').insert({ text, days }).select();
+      console.log('[Habits] Insert response:', { data, error });
       if (error) throw error;
       await loadAll();
       render();
     }
 
-    async function toggleHabitDay(habitId, dayIndex) {
+    async function updateHabitDay(habitId, dayIndex) {
       ensureClient();
       const habit = habits.find(h => h.id === habitId);
       if (!habit) return;
       const days = normalizeHabitDays(habit.days);
       if (!days[dayIndex]) return;
       days[7 + dayIndex] = !days[7 + dayIndex];
-      const { error } = await db.from('habits').update({ days }).eq('id', habitId).select();
+      console.log('[Habits] Toggle day:', { habitId, dayIndex, days });
+      const { data, error } = await db.from('habits').update({ days }).eq('id', habitId).select();
+      console.log('[Habits] Update response:', { data, error });
       if (error) throw error;
       habit.days = days;
       render();
     }
 
-    async function deleteHabit(id) {
+    async function removeHabit(id) {
       ensureClient();
+      console.log('[Habits] Deleting:', id);
       const { error } = await db.from('habits').delete().eq('id', id);
+      console.log('[Habits] Delete error:', error);
       if (error) throw error;
       habits = habits.filter(h => h.id !== id);
       render();
     }
 
+    // --- Render functions ---
     function renderTaskCard(task, showDone = false) {
       if (task.done && !showDone) return '';
       const status = taskStatus(task.date, task.done);
       const cls = ['card', status, task.done ? 'done' : ''].filter(Boolean).join(' ');
       return `
         <div class="${cls}">
-          <input type="checkbox" ${task.done ? 'checked' : ''} onchange="toggleTask('${task.id}', this.checked)">
+          <input type="checkbox" class="task-check" data-id="${task.id}" ${task.done ? 'checked' : ''}>
           <div class="card-body">
             <div class="card-text">${esc(task.text)}
               <span class="badge ${PRIORITY_BADGE[task.priority] || 'badge-medium'}">${PRIORITY_LABELS[task.priority] || task.priority}</span>
             </div>
             <div class="card-meta">📅 ${formatDate(task.date)}</div>
           </div>
-          <button class="btn-delete" onclick="deleteTask('${task.id}')" title="წაშლა">✕</button>
+          <button class="btn-delete" data-delete-task="${task.id}" title="წაშლა">✕</button>
         </div>`;
     }
 
@@ -916,7 +907,7 @@
             </div>
             <div class="card-meta">📅 ${formatDate(ev.date)} · <span class="${daysClass}">${daysText}</span></div>
           </div>
-          <button class="btn-delete" onclick="deleteEvent('${ev.id}')" title="წაშლა">✕</button>
+          <button class="btn-delete" data-delete-event="${ev.id}" title="წაშლა">✕</button>
         </div>`;
     }
 
@@ -934,7 +925,7 @@
           let cls = 'day-dot';
           if (sched) cls += ' scheduled';
           if (sched && comp) cls += ' done';
-          const click = sched ? `onclick="toggleHabitDay('${habit.id}', ${i})"` : '';
+          const click = sched ? `data-habit-id="${habit.id}" data-day="${i}"` : '';
           return `<div class="${cls}" ${click} title="${lbl}">${lbl}</div>`;
         }).join('')}</div>`;
       } else {
@@ -942,7 +933,7 @@
         scheduleHtml = `
           <div class="habit-schedule">
             <div class="day-dot scheduled ${todayDone ? 'done' : ''}"
-                 onclick="toggleHabitDay('${habit.id}', ${todayIdx})"
+                 data-habit-id="${habit.id}" data-day="${todayIdx}"
                  title="დღევანდ">${DAY_LABELS[todayIdx]}</div>
           </div>`;
       }
@@ -954,7 +945,7 @@
             <div class="progress">ამ კვირას: <strong>${done}/${total || 7}</strong></div>
             ${scheduleHtml}
           </div>
-          ${dashboard ? '' : `<button class="btn-delete" onclick="deleteHabit('${habit.id}')" title="წაშლა">✕</button>`}
+          ${dashboard ? '' : `<button class="btn-delete" data-delete-habit="${habit.id}" title="წაშლა">✕</button>`}
         </div>`;
     }
 
@@ -973,25 +964,30 @@
         .sort((a, b) => a.daysLeft - b.daysLeft);
       const todayHabits = habits.filter(h => isHabitScheduledToday(h.days));
 
+      // Stats
       document.getElementById('stats').innerHTML = `
         <div class="stat-card"><div class="num">${activeTasks.length}</div><div class="label">მიმდინარე</div></div>
         <div class="stat-card"><div class="num">${overdue.length}</div><div class="label">ვადაგადასული</div></div>
         <div class="stat-card"><div class="num">${upcomingEvents.length}</div><div class="label">14 დღეში</div></div>
         <div class="stat-card"><div class="num">${habits.length}</div><div class="label">ჩვევები</div></div>`;
 
+      // Dashboard tasks
       const dashTasks = activeTasks.sort((a, b) => a.date.localeCompare(b.date));
       document.getElementById('dash-tasks').innerHTML = dashTasks.length
         ? dashTasks.map(t => renderTaskCard(t)).join('')
         : '<p class="empty">ამოცანები არ არის</p>';
 
+      // Dashboard events
       document.getElementById('dash-events').innerHTML = upcomingEvents.length
         ? upcomingEvents.map(e => renderEventCard(e)).join('')
         : '<p class="empty">მოახლოებული თარიღები არ არის</p>';
 
+      // Dashboard habits
       document.getElementById('dash-habits').innerHTML = todayHabits.length
         ? todayHabits.map(h => renderHabitCard(h, true)).join('')
         : '<p class="empty">დღევანდელი ჩვევები არ არის</p>';
 
+      // All tasks
       const allSorted = [...tasks].sort((a, b) => {
         if (a.done !== b.done) return a.done ? 1 : -1;
         return a.date.localeCompare(b.date);
@@ -1000,11 +996,13 @@
         ? allSorted.map(t => renderTaskCard(t, true)).join('')
         : '<p class="empty">ამოცანები არ არის</p>';
 
+      // Habits list
       document.getElementById('habits-list').innerHTML = habits.length
         ? habits.map(h => renderHabitCard(h)).join('')
         : '<p class="empty">ჩვევები არ არის</p>';
     }
 
+    // --- Init day toggles for habit form ---
     function initHabitDayToggles() {
       const container = document.getElementById('habitDayToggles');
       container.innerHTML = DAY_LABELS.map((lbl, i) => `
@@ -1014,6 +1012,7 @@
         </label>`).join('');
     }
 
+    // --- Event listeners ---
     function setupEventListeners() {
       document.querySelectorAll('.nav-item').forEach(btn => {
         btn.addEventListener('click', () => navigate(btn.dataset.page));
@@ -1025,95 +1024,121 @@
       });
       document.getElementById('overlay').addEventListener('click', closeSidebar);
 
-      document.getElementById('taskForm').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const btn = e.target.querySelector('.btn');
-        btn.disabled = true;
+      const appRoot = document.getElementById('appRoot');
+
+      appRoot.addEventListener('change', async (e) => {
+        if (!e.target.classList.contains('task-check')) return;
         try {
-          await addTask(
-            document.getElementById('taskText').value.trim(),
-            document.getElementById('taskDate').value,
-            document.getElementById('taskPriority').value
-          );
-          e.target.reset();
-          navigate('dashboard');
+          await updateTaskDone(e.target.dataset.id, e.target.checked);
         } catch (err) {
-          showError('ამოცანის დამატება ვერ მოხერხდა: ' + err.message);
+          e.target.checked = !e.target.checked;
+          showError(err.message);
         }
-        btn.disabled = false;
+      });
+
+      appRoot.addEventListener('click', async (e) => {
+        const taskBtn = e.target.closest('[data-delete-task]');
+        if (taskBtn) {
+          if (!confirm('წავშალოთ ეს ამოცანა?')) return;
+          try { await removeTask(taskBtn.dataset.deleteTask); } catch (err) { showError(err.message); }
+          return;
+        }
+
+        const eventBtn = e.target.closest('[data-delete-event]');
+        if (eventBtn) {
+          if (!confirm('წავშალოთ ეს თარიღი?')) return;
+          try { await removeEvent(eventBtn.dataset.deleteEvent); } catch (err) { showError(err.message); }
+          return;
+        }
+
+        const habitBtn = e.target.closest('[data-delete-habit]');
+        if (habitBtn) {
+          if (!confirm('წავშალოთ ეს ჩვევა?')) return;
+          try { await removeHabit(habitBtn.dataset.deleteHabit); } catch (err) { showError(err.message); }
+          return;
+        }
+
+        const dayDot = e.target.closest('.day-dot.scheduled[data-habit-id]');
+        if (dayDot) {
+          try {
+            await updateHabitDay(dayDot.dataset.habitId, Number(dayDot.dataset.day));
+          } catch (err) {
+            showError(err.message);
+          }
+        }
+      });
+
+      document.getElementById('taskForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = e.target.querySelector('.btn');
+      btn.disabled = true;
+      try {
+        await addTask(
+          document.getElementById('taskText').value.trim(),
+          document.getElementById('taskDate').value,
+          document.getElementById('taskPriority').value
+        );
+        e.target.reset();
+        navigate('dashboard');
+      } catch (err) {
+        showError('ამოცანის დამატება ვერ მოხერხდა: ' + err.message);
+      }
+      btn.disabled = false;
       });
 
       document.getElementById('eventForm').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const btn = e.target.querySelector('.btn');
-        btn.disabled = true;
-        try {
-          await addEvent(
-            document.getElementById('eventText').value.trim(),
-            document.getElementById('eventDate').value,
-            document.getElementById('eventType').value
-          );
-          e.target.reset();
-          navigate('dashboard');
-        } catch (err) {
-          showError('თარიღის დამატება ვერ მოხერხდა: ' + err.message);
-        }
-        btn.disabled = false;
+      e.preventDefault();
+      const btn = e.target.querySelector('.btn');
+      btn.disabled = true;
+      try {
+        await addEvent(
+          document.getElementById('eventText').value.trim(),
+          document.getElementById('eventDate').value,
+          document.getElementById('eventType').value
+        );
+        e.target.reset();
+        navigate('dashboard');
+      } catch (err) {
+        showError('თარიღის დამატება ვერ მოხერხდა: ' + err.message);
+      }
+      btn.disabled = false;
       });
 
       document.getElementById('habitForm').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const btn = e.target.querySelector('.btn');
-        btn.disabled = true;
-        try {
-          const schedule = DAY_LABELS.map((_, i) => {
-            const cb = document.querySelector(`input[name="habitDay"][value="${i}"]`);
-            return cb ? cb.checked : false;
-          });
-          if (!schedule.some(Boolean)) {
-            showError('აირჩიეთ მინიმუმ ერთი დღე');
-            btn.disabled = false;
-            return;
-          }
-          await addHabit(document.getElementById('habitText').value.trim(), schedule);
-          e.target.reset();
-          document.querySelectorAll('input[name="habitDay"]').forEach(cb => cb.checked = true);
-          render();
-        } catch (err) {
-          showError('ჩვევის დამატება ვერ მოხერხდა: ' + err.message);
+      e.preventDefault();
+      const btn = e.target.querySelector('.btn');
+      btn.disabled = true;
+      try {
+        const schedule = DAY_LABELS.map((_, i) => {
+          const cb = document.querySelector(`input[name="habitDay"][value="${i}"]`);
+          return cb ? cb.checked : false;
+        });
+        if (!schedule.some(Boolean)) {
+          showError('აირჩიეთ მინიმუმ ერთი დღე');
+          btn.disabled = false;
+          return;
         }
-        btn.disabled = false;
+        await addHabit(document.getElementById('habitText').value.trim(), schedule);
+        e.target.reset();
+        document.querySelectorAll('input[name="habitDay"]').forEach(cb => cb.checked = true);
+        render();
+      } catch (err) {
+        showError('ჩვევის დამატება ვერ მოხერხდა: ' + err.message);
+      }
+      btn.disabled = false;
       });
     }
 
-    function exposeGlobalHandlers() {
-      window.toggleTask = async (id, done) => {
-        try { await toggleTask(id, done); } catch (err) { showError(err.message); }
-      };
-      window.deleteTask = async (id) => {
-        if (!confirm('წავშალოთ ეს ამოცანა?')) return;
-        try { await deleteTask(id); } catch (err) { showError(err.message); }
-      };
-      window.deleteEvent = async (id) => {
-        if (!confirm('წავშალოთ ეს თარიღი?')) return;
-        try { await deleteEvent(id); } catch (err) { showError(err.message); }
-      };
-      window.deleteHabit = async (id) => {
-        if (!confirm('წავშალოთ ეს ჩვევა?')) return;
-        try { await deleteHabit(id); } catch (err) { showError(err.message); }
-      };
-      window.toggleHabitDay = async (id, dayIndex) => {
-        try { await toggleHabitDay(id, dayIndex); } catch (err) { showError(err.message); }
-      };
-    }
-
+    // --- Boot ---
     async function boot() {
+      console.log('[App] Boot started');
       try {
         initHabitDayToggles();
         initSupabaseClient();
         await testConnection();
         await loadAll();
         render();
+        console.log('[App] Boot complete');
       } catch (err) {
         console.error('[App] Boot failed:', err);
         showError('აპის გაშვება ვერ მოხერხდა: ' + (err.message || err));
@@ -1121,32 +1146,26 @@
     }
 
     const AUTH_KEY = 'reminder_authenticated';
-    const NOTIF_ASKED_KEY = 'notifications_asked';
     const APP_PASSWORD = 'zura2026!';
     let appStarted = false;
 
-    async function startApp(isFirstVisit) {
+    async function startApp() {
       if (appStarted) return;
       appStarted = true;
+      console.log('[App] Starting...');
       setupEventListeners();
-      exposeGlobalHandlers();
-      await Promise.all([
-        boot(),
-        setupNotifications(isFirstVisit),
-      ]);
+      await boot();
     }
 
-    function unlockApp(isFirstVisit) {
+    function unlockApp() {
       document.getElementById('authGate').classList.add('hidden');
       document.getElementById('appRoot').classList.remove('hidden');
-      startApp(isFirstVisit);
+      startApp();
     }
 
     function initAuth() {
-      const isFirstVisit = !localStorage.getItem(NOTIF_ASKED_KEY);
-
       if (sessionStorage.getItem(AUTH_KEY) === '1') {
-        unlockApp(isFirstVisit);
+        unlockApp();
         return;
       }
 
@@ -1158,7 +1177,7 @@
         if (input.value === APP_PASSWORD) {
           sessionStorage.setItem(AUTH_KEY, '1');
           errorEl.textContent = '';
-          unlockApp(!localStorage.getItem(NOTIF_ASKED_KEY));
+          unlockApp();
         } else {
           errorEl.textContent = 'არასწორი პაროლი';
           input.value = '';
