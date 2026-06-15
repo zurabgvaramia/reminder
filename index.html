@@ -693,7 +693,7 @@
     let tasks = [];
     let events = [];
     let habits = [];
-    const collapsedGroups = new Set();
+    const expandedGroups = new Set();
 
     const MONTHS_KA = ['იანვარი', 'თებერვალი', 'მარტი', 'აპრილი', 'მაისი', 'ივნისი',
       'ივლისი', 'აგვისტო', 'სექტემბერი', 'ოქტომბერი', 'ნოემბერი', 'დეკემბერი'];
@@ -793,7 +793,7 @@
       let html = '';
       for (const [date, groupTasks] of groups) {
         const label = getDateGroupLabel(date);
-        const collapsed = collapsedGroups.has(date);
+        const collapsed = !expandedGroups.has(date);
         html += `
           <div class="date-group${collapsed ? ' collapsed' : ''}" data-date="${date}">
             <button type="button" class="date-group-header">
@@ -1152,9 +1152,9 @@
           const date = group.dataset.date;
           group.classList.toggle('collapsed');
           if (group.classList.contains('collapsed')) {
-            collapsedGroups.add(date);
+            expandedGroups.delete(date);
           } else {
-            collapsedGroups.delete(date);
+            expandedGroups.add(date);
           }
           return;
         }
