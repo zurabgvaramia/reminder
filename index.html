@@ -152,6 +152,71 @@
       margin-top: .15rem;
     }
 
+    .category-cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: .75rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .category-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: .85rem 1rem;
+      cursor: pointer;
+      transition: box-shadow .15s ease;
+      border-left: 4px solid var(--cat-color, var(--accent));
+      box-shadow: var(--shadow);
+    }
+
+    .category-card:hover {
+      box-shadow: 0 4px 12px rgba(0,0,0,.12);
+    }
+
+    .category-card .cat-name {
+      font-size: .85rem;
+      font-weight: 600;
+    }
+
+    .category-card .cat-num {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-top: .15rem;
+      color: var(--cat-color, var(--accent));
+    }
+
+    .category-swatch {
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      flex-shrink: 0;
+      border: 1px solid rgba(0,0,0,.08);
+    }
+
+    .form-group input[type="color"] {
+      width: 100%;
+      height: 42px;
+      padding: .25rem;
+      cursor: pointer;
+    }
+
+    .filter-select {
+      padding: .4rem .85rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      font-size: .85rem;
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    .filter-select:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(37,99,235,.12);
+    }
+
     /* Sections */
     .section {
       background: var(--surface);
@@ -483,6 +548,7 @@
         padding-top: 3.5rem;
       }
       .stats { grid-template-columns: repeat(2, 1fr); }
+      .category-cards { grid-template-columns: repeat(2, 1fr); }
     }
 
     /* Auth gate */
@@ -574,6 +640,7 @@
         <button class="nav-item" data-page="new-task">ახალი ამოცანა</button>
         <button class="nav-item" data-page="new-event">ახალი თარიღი</button>
         <button class="nav-item" data-page="habits">ჩვევები</button>
+        <button class="nav-item" data-page="categories">კატეგორიები</button>
         <button class="nav-item" data-page="all-tasks">ყველა ამოცანა</button>
         <button class="nav-item" data-page="all-events">ყველა თარიღი</button>
       </nav>
@@ -586,6 +653,7 @@
       <div class="page active" id="page-dashboard">
         <h1 class="page-title">დეშბორდი</h1>
         <div class="stats" id="stats"></div>
+        <div class="category-cards" id="category-cards"></div>
 
         <div class="section">
           <h2>მიმდინარე ამოცანები</h2>
@@ -607,6 +675,12 @@
       <div class="page" id="page-new-task">
         <h1 class="page-title">ახალი ამოცანა</h1>
         <form class="form-card" id="taskForm">
+          <div class="form-group">
+            <label for="taskCategory">კატეგორია</label>
+            <select id="taskCategory">
+              <option value="">— კატეგორიის გარეშე —</option>
+            </select>
+          </div>
           <div class="form-group">
             <label for="taskText">ამოცანა</label>
             <input type="text" id="taskText" required placeholder="რა უნდა გაკეთდეს?">
@@ -669,6 +743,23 @@
         <div id="habits-list"></div>
       </div>
 
+      <!-- Categories -->
+      <div class="page" id="page-categories">
+        <h1 class="page-title">კატეგორიები</h1>
+        <form class="form-card" id="categoryForm" style="margin-bottom:1.5rem">
+          <div class="form-group">
+            <label for="categoryName">სახელი</label>
+            <input type="text" id="categoryName" required placeholder="მაგ: სამუშაო, პირადი">
+          </div>
+          <div class="form-group">
+            <label for="categoryColor">ფერი</label>
+            <input type="color" id="categoryColor" value="#2563eb">
+          </div>
+          <button type="submit" class="btn">დამატება</button>
+        </form>
+        <div id="categories-list"></div>
+      </div>
+
       <!-- All Tasks -->
       <div class="page" id="page-all-tasks">
         <h1 class="page-title">ყველა ამოცანა</h1>
@@ -677,6 +768,9 @@
           <button type="button" class="filter-btn" data-filter="active">მიმდინარე</button>
           <button type="button" class="filter-btn" data-filter="overdue">ვადაგადასული</button>
           <button type="button" class="filter-btn" data-filter="done">შესრულებული</button>
+          <select class="filter-select" id="categoryFilterSelect" aria-label="კატეგორიის ფილტრი">
+            <option value="">ყველა კატეგორია</option>
+          </select>
         </div>
         <div id="all-tasks-list"></div>
       </div>
@@ -738,8 +832,10 @@
     let tasks = [];
     let events = [];
     let habits = [];
+    let categories = [];
     const expandedGroups = new Set();
     let taskFilter = 'all';
+    let categoryFilter = '';
 
     const MONTHS_KA = ['იანვარი', 'თებერვალი', 'მარტი', 'აპრილი', 'მაისი', 'ივნისი',
       'ივლისი', 'აგვისტო', 'სექტემბერი', 'ოქტომბერი', 'ნოემბერი', 'დეკემბერი'];
@@ -817,6 +913,23 @@
         default:
           return list;
       }
+    }
+
+    function applyTaskFilters(list) {
+      let result = filterTasks(list, taskFilter);
+      if (categoryFilter) {
+        result = result.filter(t => String(t.category_id) === String(categoryFilter));
+      }
+      return result;
+    }
+
+    function getCategoryById(id) {
+      if (id == null) return null;
+      return categories.find(c => String(c.id) === String(id)) || null;
+    }
+
+    function countTasksInCategory(categoryId) {
+      return tasks.filter(t => String(t.category_id) === String(categoryId)).length;
     }
 
     function getUpcomingEvents() {
@@ -920,6 +1033,9 @@
       if (opts.taskFilter !== undefined) {
         taskFilter = opts.taskFilter;
       }
+      if (opts.categoryFilter !== undefined) {
+        categoryFilter = opts.categoryFilter ? String(opts.categoryFilter) : '';
+      }
       document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
       document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
       document.getElementById('page-' + page).classList.add('active');
@@ -940,25 +1056,29 @@
       console.log('[Data] Loading all tables...');
 
       try {
-        const [tRes, eRes, hRes] = await Promise.all([
+        const [tRes, eRes, hRes, cRes] = await Promise.all([
           db.from('tasks').select('*').order('date', { ascending: true }),
           db.from('events').select('*').order('date', { ascending: true }),
           db.from('habits').select('*').order('created_at', { ascending: true }),
+          db.from('categories').select('*').order('name', { ascending: true }),
         ]);
 
         console.log('[Data] tasks response:', tRes);
         console.log('[Data] events response:', eRes);
         console.log('[Data] habits response:', hRes);
+        console.log('[Data] categories response:', cRes);
 
         if (tRes.error) throw tRes.error;
         if (eRes.error) throw eRes.error;
         if (hRes.error) throw hRes.error;
+        if (cRes.error) throw cRes.error;
 
         tasks = tRes.data || [];
         events = eRes.data || [];
         habits = (hRes.data || []).map(h => ({ ...h, days: normalizeHabitDays(h.days) }));
+        categories = cRes.data || [];
 
-        console.log('[Data] Loaded:', { tasks: tasks.length, events: events.length, habits: habits.length });
+        console.log('[Data] Loaded:', { tasks: tasks.length, events: events.length, habits: habits.length, categories: categories.length });
       } catch (err) {
         console.error('[Data] loadAll failed:', err);
         showError('მონაცემების ჩატვირთვა ვერ მოხერხდა: ' + (err.message || err));
@@ -967,10 +1087,12 @@
     }
 
     // --- Task actions ---
-    async function addTask(text, date, priority) {
+    async function addTask(text, date, priority, categoryId) {
       ensureClient();
-      console.log('[Tasks] Adding:', { text, date, priority });
-      const { data, error } = await db.from('tasks').insert({ text, date, priority, done: false }).select();
+      console.log('[Tasks] Adding:', { text, date, priority, categoryId });
+      const payload = { text, date, priority, done: false };
+      if (categoryId) payload.category_id = Number(categoryId);
+      const { data, error } = await db.from('tasks').insert(payload).select();
       console.log('[Tasks] Insert response:', { data, error });
       if (error) throw error;
       await loadAll();
@@ -1056,16 +1178,43 @@
       render();
     }
 
+    // --- Category actions ---
+    async function addCategory(name, color) {
+      ensureClient();
+      console.log('[Categories] Adding:', { name, color });
+      const { error } = await db.from('categories').insert({ name, color }).select();
+      if (error) throw error;
+      await loadAll();
+      render();
+    }
+
+    async function removeCategory(id) {
+      ensureClient();
+      console.log('[Categories] Deleting:', id);
+      await db.from('tasks').update({ category_id: null }).eq('category_id', id);
+      const { error } = await db.from('categories').delete().eq('id', id);
+      if (error) throw error;
+      categories = categories.filter(c => c.id !== id);
+      if (String(categoryFilter) === String(id)) categoryFilter = '';
+      await loadAll();
+      render();
+    }
+
     // --- Render functions ---
     function renderTaskCard(task, showDone = false) {
       if (task.done && !showDone) return '';
       const status = taskStatus(task.date, task.done);
       const cls = ['card', status, task.done ? 'done' : ''].filter(Boolean).join(' ');
+      const cat = getCategoryById(task.category_id);
+      const catBadge = cat
+        ? `<span class="badge" style="background:${esc(cat.color)}22;color:${esc(cat.color)}">${esc(cat.name)}</span>`
+        : '';
       return `
         <div class="${cls}">
           <input type="checkbox" class="task-check" data-id="${task.id}" ${task.done ? 'checked' : ''}>
           <div class="card-body">
             <div class="card-text">${esc(task.text)}
+              ${catBadge}
               <span class="badge ${PRIORITY_BADGE[task.priority] || 'badge-medium'}">${PRIORITY_LABELS[task.priority] || task.priority}</span>
             </div>
             <div class="card-meta">📅 ${formatDate(task.date)}</div>
@@ -1137,6 +1286,48 @@
       return d.innerHTML;
     }
 
+    function renderCategoryDropdowns() {
+      const taskSel = document.getElementById('taskCategory');
+      if (taskSel) {
+        const current = taskSel.value;
+        taskSel.innerHTML = '<option value="">— კატეგორიის გარეშე —</option>' +
+          categories.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+        if (current && categories.some(c => String(c.id) === current)) {
+          taskSel.value = current;
+        }
+      }
+
+      const filterSel = document.getElementById('categoryFilterSelect');
+      if (filterSel) {
+        filterSel.innerHTML = '<option value="">ყველა კატეგორია</option>' +
+          categories.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+        filterSel.value = categoryFilter || '';
+      }
+    }
+
+    function renderCategoryCard(cat) {
+      const count = countTasksInCategory(cat.id);
+      return `
+        <div class="category-card" data-category-id="${cat.id}" role="button" tabindex="0"
+             style="--cat-color: ${esc(cat.color)}">
+          <div class="cat-name">${esc(cat.name)}</div>
+          <div class="cat-num">${count}</div>
+        </div>`;
+    }
+
+    function renderCategoryRow(cat) {
+      const count = countTasksInCategory(cat.id);
+      return `
+        <div class="card">
+          <div class="category-swatch" style="background:${esc(cat.color)}"></div>
+          <div class="card-body">
+            <div class="card-text">${esc(cat.name)}</div>
+            <div class="card-meta">${count} ამოცანა</div>
+          </div>
+          <button class="btn-delete" data-delete-category="${cat.id}" title="წაშლა">✕</button>
+        </div>`;
+    }
+
     function render() {
       const activeTasks = tasks.filter(t => !t.done);
       const overdue = activeTasks.filter(t => taskStatus(t.date, false) === 'overdue');
@@ -1151,6 +1342,13 @@
         <div class="stat-card" data-stat="overdue" role="button" tabindex="0"><div class="num">${overdue.length}</div><div class="label">ვადაგადასული</div></div>
         <div class="stat-card" data-stat="upcoming" role="button" tabindex="0"><div class="num">${upcomingCount}</div><div class="label">მოახლოებული</div></div>
         <div class="stat-card" data-stat="habits" role="button" tabindex="0"><div class="num">${habits.length}</div><div class="label">ჩვევები</div></div>`;
+
+      // Dashboard category cards
+      document.getElementById('category-cards').innerHTML = categories.length
+        ? categories.map(c => renderCategoryCard(c)).join('')
+        : '';
+
+      renderCategoryDropdowns();
 
       // Dashboard tasks (grouped by date)
       const dashTasks = activeTasks;
@@ -1169,7 +1367,7 @@
         : '<p class="empty">დღევანდელი ჩვევები არ არის</p>';
 
       // All tasks (grouped by date, filtered)
-      const filteredTasks = filterTasks(tasks, taskFilter);
+      const filteredTasks = applyTaskFilters(tasks);
       const showDoneInGroups = taskFilter === 'all' || taskFilter === 'done';
       document.getElementById('all-tasks-list').innerHTML = filteredTasks.length
         ? renderTaskGroups(filteredTasks, showDoneInGroups)
@@ -1178,6 +1376,11 @@
       document.querySelectorAll('#taskFilterBar .filter-btn').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.filter === taskFilter);
       });
+
+      // Categories list
+      document.getElementById('categories-list').innerHTML = categories.length
+        ? categories.map(c => renderCategoryRow(c)).join('')
+        : '<p class="empty">კატეგორიები არ არის</p>';
 
       // All events (14 days)
       document.getElementById('all-events-list').innerHTML = upcomingEvents.length
@@ -1242,6 +1445,19 @@
           return;
         }
 
+        const categoryCard = e.target.closest('.category-card[data-category-id]');
+        if (categoryCard) {
+          navigate('all-tasks', { categoryFilter: categoryCard.dataset.categoryId, taskFilter: 'all' });
+          return;
+        }
+
+        const categoryBtn = e.target.closest('[data-delete-category]');
+        if (categoryBtn) {
+          if (!confirm('წავშალოთ ეს კატეგორია?')) return;
+          try { await removeCategory(categoryBtn.dataset.deleteCategory); } catch (err) { showError(err.message); }
+          return;
+        }
+
         const groupHeader = e.target.closest('.date-group-header');
         if (groupHeader) {
           const group = groupHeader.closest('.date-group');
@@ -1286,6 +1502,11 @@
         }
       });
 
+      document.getElementById('categoryFilterSelect').addEventListener('change', (e) => {
+        categoryFilter = e.target.value;
+        render();
+      });
+
       document.getElementById('taskForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = e.target.querySelector('.btn');
@@ -1294,7 +1515,8 @@
         await addTask(
           document.getElementById('taskText').value.trim(),
           document.getElementById('taskDate').value,
-          document.getElementById('taskPriority').value
+          document.getElementById('taskPriority').value,
+          document.getElementById('taskCategory').value
         );
         e.target.reset();
         navigate('dashboard');
@@ -1342,6 +1564,24 @@
         render();
       } catch (err) {
         showError('ჩვევის დამატება ვერ მოხერხდა: ' + err.message);
+      }
+      btn.disabled = false;
+      });
+
+      document.getElementById('categoryForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = e.target.querySelector('.btn');
+      btn.disabled = true;
+      try {
+        await addCategory(
+          document.getElementById('categoryName').value.trim(),
+          document.getElementById('categoryColor').value
+        );
+        e.target.reset();
+        document.getElementById('categoryColor').value = '#2563eb';
+        render();
+      } catch (err) {
+        showError('კატეგორიის დამატება ვერ მოხერხდა: ' + err.message);
       }
       btn.disabled = false;
       });
