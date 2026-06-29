@@ -325,6 +325,82 @@
 
     .btn-delete:hover { color: var(--danger); background: #fee2e2; }
 
+    .card-actions {
+      display: flex;
+      gap: .15rem;
+      flex-shrink: 0;
+    }
+
+    .btn-edit {
+      background: none;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 1rem;
+      padding: .15rem .35rem;
+      border-radius: 4px;
+      flex-shrink: 0;
+      line-height: 1;
+    }
+
+    .btn-edit:hover { color: var(--accent); background: #eff6ff; }
+
+    .card.editing {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .inline-form {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: .65rem;
+    }
+
+    .inline-form .inline-row {
+      display: flex;
+      flex-direction: column;
+      gap: .25rem;
+    }
+
+    .inline-form label {
+      font-size: .75rem;
+      font-weight: 500;
+      color: var(--muted);
+    }
+
+    .inline-form input,
+    .inline-form select {
+      width: 100%;
+      padding: .45rem .6rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font-size: .85rem;
+      font-family: inherit;
+      background: var(--surface);
+    }
+
+    .inline-form .day-toggles { margin-top: .15rem; }
+
+    .inline-form-actions {
+      display: flex;
+      gap: .5rem;
+      margin-top: .25rem;
+    }
+
+    .btn-sm {
+      padding: .4rem .85rem;
+      font-size: .82rem;
+    }
+
+    .btn-secondary {
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .btn-secondary:hover { background: var(--bg); }
+
     /* Date groups */
     .date-group { margin-bottom: .75rem; }
 
@@ -836,6 +912,9 @@
     const expandedGroups = new Set();
     let taskFilter = 'all';
     let categoryFilter = '';
+    let editingTaskId = null;
+    let editingEventId = null;
+    let editingHabitId = null;
 
     const MONTHS_KA = ['იანვარი', 'თებერვალი', 'მარტი', 'აპრილი', 'მაისი', 'ივნისი',
       'ივლისი', 'აგვისტო', 'სექტემბერი', 'ოქტომბერი', 'ნოემბერი', 'დეკემბერი'];
@@ -1036,6 +1115,9 @@
       if (opts.categoryFilter !== undefined) {
         categoryFilter = opts.categoryFilter ? String(opts.categoryFilter) : '';
       }
+      editingTaskId = null;
+      editingEventId = null;
+      editingHabitId = null;
       document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
       document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
       document.getElementById('page-' + page).classList.add('active');
@@ -1116,7 +1198,23 @@
       const { error } = await db.from('tasks').delete().eq('id', id);
       console.log('[Tasks] Delete error:', error);
       if (error) throw error;
+      if (String(editingTaskId) === String(id)) editingTaskId = null;
       tasks = tasks.filter(t => t.id !== id);
+      render();
+    }
+
+    async function updateTask(id, text, date, priority, categoryId) {
+      ensureClient();
+      const payload = {
+        text,
+        date,
+        priority,
+        category_id: categoryId ? Number(categoryId) : null,
+      };
+      const { error } = await db.from('tasks').update(payload).eq('id', id);
+      if (error) throw error;
+      editingTaskId = null;
+      await loadAll();
       render();
     }
 
@@ -1137,7 +1235,17 @@
       const { error } = await db.from('events').delete().eq('id', id);
       console.log('[Events] Delete error:', error);
       if (error) throw error;
+      if (String(editingEventId) === String(id)) editingEventId = null;
       events = events.filter(e => e.id !== id);
+      render();
+    }
+
+    async function updateEvent(id, text, date, type) {
+      ensureClient();
+      const { error } = await db.from('events').update({ text, date, type }).eq('id', id);
+      if (error) throw error;
+      editingEventId = null;
+      await loadAll();
       render();
     }
 
@@ -1174,7 +1282,20 @@
       const { error } = await db.from('habits').delete().eq('id', id);
       console.log('[Habits] Delete error:', error);
       if (error) throw error;
+      if (String(editingHabitId) === String(id)) editingHabitId = null;
       habits = habits.filter(h => h.id !== id);
+      render();
+    }
+
+    async function updateHabit(id, text, schedule) {
+      ensureClient();
+      const habit = habits.find(h => String(h.id) === String(id));
+      const oldDays = normalizeHabitDays(habit?.days || []);
+      const days = [...schedule, ...oldDays.slice(7, 14)];
+      const { error } = await db.from('habits').update({ text, days }).eq('id', id);
+      if (error) throw error;
+      editingHabitId = null;
+      await loadAll();
       render();
     }
 
@@ -1201,8 +1322,56 @@
     }
 
     // --- Render functions ---
+    function renderCategoryOptions(selectedId) {
+      return '<option value="">— კატეგორიის გარეშე —</option>' +
+        categories.map(c =>
+          `<option value="${c.id}"${String(selectedId) === String(c.id) ? ' selected' : ''}>${esc(c.name)}</option>`
+        ).join('');
+    }
+
+    function renderHabitDayToggles(name, schedule) {
+      return `<div class="day-toggles">${DAY_LABELS.map((lbl, i) => `
+        <label class="day-toggle">
+          <input type="checkbox" name="${name}" value="${i}"${schedule[i] ? ' checked' : ''}>
+          <span>${lbl}</span>
+        </label>`).join('')}</div>`;
+    }
+
+    function renderTaskEditForm(task) {
+      return `
+        <div class="card editing">
+          <form class="inline-form" data-edit-task-form="${task.id}">
+            <div class="inline-row">
+              <label>ამოცანა</label>
+              <input type="text" name="text" value="${esc(task.text)}" required>
+            </div>
+            <div class="inline-row">
+              <label>დედლაინი</label>
+              <input type="date" name="date" value="${esc(task.date)}" required>
+            </div>
+            <div class="inline-row">
+              <label>პრიორიტეტი</label>
+              <select name="priority">
+                <option value="high"${task.priority === 'high' ? ' selected' : ''}>მნიშვნელოვანი</option>
+                <option value="medium"${task.priority === 'medium' ? ' selected' : ''}>ჩვეულებრივი</option>
+                <option value="low"${task.priority === 'low' ? ' selected' : ''}>დაბალი</option>
+              </select>
+            </div>
+            <div class="inline-row">
+              <label>კატეგორია</label>
+              <select name="category">${renderCategoryOptions(task.category_id)}</select>
+            </div>
+            <div class="inline-form-actions">
+              <button type="submit" class="btn btn-sm">შენახვა</button>
+              <button type="button" class="btn btn-sm btn-secondary" data-cancel-edit-task="${task.id}">გაუქმება</button>
+            </div>
+          </form>
+        </div>`;
+    }
+
     function renderTaskCard(task, showDone = false) {
       if (task.done && !showDone) return '';
+      if (String(editingTaskId) === String(task.id)) return renderTaskEditForm(task);
       const status = taskStatus(task.date, task.done);
       const cls = ['card', status, task.done ? 'done' : ''].filter(Boolean).join(' ');
       const cat = getCategoryById(task.category_id);
@@ -1219,11 +1388,44 @@
             </div>
             <div class="card-meta">📅 ${formatDate(task.date)}</div>
           </div>
-          <button class="btn-delete" data-delete-task="${task.id}" title="წაშლა">✕</button>
+          <div class="card-actions">
+            <button type="button" class="btn-edit" data-edit-task="${task.id}" title="რედაქტირება">✏️</button>
+            <button type="button" class="btn-delete" data-delete-task="${task.id}" title="წაშლა">✕</button>
+          </div>
+        </div>`;
+    }
+
+    function renderEventEditForm(ev) {
+      return `
+        <div class="card editing">
+          <form class="inline-form" data-edit-event-form="${ev.id}">
+            <div class="inline-row">
+              <label>აღწერა</label>
+              <input type="text" name="text" value="${esc(ev.text)}" required>
+            </div>
+            <div class="inline-row">
+              <label>თარიღი</label>
+              <input type="date" name="date" value="${esc(ev.date)}" required>
+            </div>
+            <div class="inline-row">
+              <label>ტიპი</label>
+              <select name="type">
+                <option value="birthday"${ev.type === 'birthday' ? ' selected' : ''}>დაბადების დღე</option>
+                <option value="anniversary"${ev.type === 'anniversary' ? ' selected' : ''}>წლისთავი</option>
+                <option value="event"${ev.type === 'event' ? ' selected' : ''}>ღონისძიება</option>
+                <option value="other"${ev.type === 'other' ? ' selected' : ''}>სხვა</option>
+              </select>
+            </div>
+            <div class="inline-form-actions">
+              <button type="submit" class="btn btn-sm">შენახვა</button>
+              <button type="button" class="btn btn-sm btn-secondary" data-cancel-edit-event="${ev.id}">გაუქმება</button>
+            </div>
+          </form>
         </div>`;
     }
 
     function renderEventCard(ev) {
+      if (String(editingEventId) === String(ev.id)) return renderEventEditForm(ev);
       const days = daysUntilEvent(ev.date);
       let daysClass = 'days-left';
       let daysText;
@@ -1238,11 +1440,36 @@
             </div>
             <div class="card-meta">📅 ${formatDate(ev.date)} · <span class="${daysClass}">${daysText}</span></div>
           </div>
-          <button class="btn-delete" data-delete-event="${ev.id}" title="წაშლა">✕</button>
+          <div class="card-actions">
+            <button type="button" class="btn-edit" data-edit-event="${ev.id}" title="რედაქტირება">✏️</button>
+            <button type="button" class="btn-delete" data-delete-event="${ev.id}" title="წაშლა">✕</button>
+          </div>
+        </div>`;
+    }
+
+    function renderHabitEditForm(habit) {
+      const schedule = getHabitSchedule(habit.days);
+      return `
+        <div class="card habit-card editing">
+          <form class="inline-form" data-edit-habit-form="${habit.id}">
+            <div class="inline-row">
+              <label>ჩვევის სახელი</label>
+              <input type="text" name="text" value="${esc(habit.text)}" required>
+            </div>
+            <div class="inline-row">
+              <label>კვირის დღეები</label>
+              ${renderHabitDayToggles(`habitDayEdit-${habit.id}`, schedule)}
+            </div>
+            <div class="inline-form-actions">
+              <button type="submit" class="btn btn-sm">შენახვა</button>
+              <button type="button" class="btn btn-sm btn-secondary" data-cancel-edit-habit="${habit.id}">გაუქმება</button>
+            </div>
+          </form>
         </div>`;
     }
 
     function renderHabitCard(habit, dashboard = false) {
+      if (String(editingHabitId) === String(habit.id)) return renderHabitEditForm(habit);
       const schedule = getHabitSchedule(habit.days);
       const completions = getHabitCompletions(habit.days);
       const { done, total } = habitWeekProgress(habit.days);
@@ -1269,6 +1496,12 @@
           </div>`;
       }
 
+      const actionsHtml = `
+        <div class="card-actions">
+          <button type="button" class="btn-edit" data-edit-habit="${habit.id}" title="რედაქტირება">✏️</button>
+          ${dashboard ? '' : `<button type="button" class="btn-delete" data-delete-habit="${habit.id}" title="წაშლა">✕</button>`}
+        </div>`;
+
       return `
         <div class="card habit-card">
           <div class="card-body">
@@ -1276,7 +1509,7 @@
             <div class="progress">ამ კვირას: <strong>${done}/${total || 7}</strong></div>
             ${scheduleHtml}
           </div>
-          ${dashboard ? '' : `<button class="btn-delete" data-delete-habit="${habit.id}" title="წაშლა">✕</button>`}
+          ${actionsHtml}
         </div>`;
     }
 
@@ -1343,9 +1576,10 @@
         <div class="stat-card" data-stat="upcoming" role="button" tabindex="0"><div class="num">${upcomingCount}</div><div class="label">მოახლოებული</div></div>
         <div class="stat-card" data-stat="habits" role="button" tabindex="0"><div class="num">${habits.length}</div><div class="label">ჩვევები</div></div>`;
 
-      // Dashboard category cards
-      document.getElementById('category-cards').innerHTML = categories.length
-        ? categories.map(c => renderCategoryCard(c)).join('')
+      // Dashboard category cards (only with tasks)
+      const categoriesWithTasks = categories.filter(c => countTasksInCategory(c.id) > 0);
+      document.getElementById('category-cards').innerHTML = categoriesWithTasks.length
+        ? categoriesWithTasks.map(c => renderCategoryCard(c)).join('')
         : '';
 
       renderCategoryDropdowns();
@@ -1427,6 +1661,73 @@
         }
       });
 
+      appRoot.addEventListener('submit', async (e) => {
+        const taskForm = e.target.closest('[data-edit-task-form]');
+        if (taskForm) {
+          e.preventDefault();
+          const btn = taskForm.querySelector('[type="submit"]');
+          btn.disabled = true;
+          try {
+            const fd = new FormData(taskForm);
+            await updateTask(
+              taskForm.dataset.editTaskForm,
+              fd.get('text').trim(),
+              fd.get('date'),
+              fd.get('priority'),
+              fd.get('category')
+            );
+          } catch (err) {
+            showError('ამოცანის განახლება ვერ მოხერხდა: ' + err.message);
+          }
+          btn.disabled = false;
+          return;
+        }
+
+        const eventForm = e.target.closest('[data-edit-event-form]');
+        if (eventForm) {
+          e.preventDefault();
+          const btn = eventForm.querySelector('[type="submit"]');
+          btn.disabled = true;
+          try {
+            const fd = new FormData(eventForm);
+            await updateEvent(
+              eventForm.dataset.editEventForm,
+              fd.get('text').trim(),
+              fd.get('date'),
+              fd.get('type')
+            );
+          } catch (err) {
+            showError('თარიღის განახლება ვერ მოხერხდა: ' + err.message);
+          }
+          btn.disabled = false;
+          return;
+        }
+
+        const habitForm = e.target.closest('[data-edit-habit-form]');
+        if (habitForm) {
+          e.preventDefault();
+          const btn = habitForm.querySelector('[type="submit"]');
+          btn.disabled = true;
+          try {
+            const id = habitForm.dataset.editHabitForm;
+            const fd = new FormData(habitForm);
+            const schedule = DAY_LABELS.map((_, i) => {
+              const cb = habitForm.querySelector(`input[name="habitDayEdit-${id}"][value="${i}"]`);
+              return cb ? cb.checked : false;
+            });
+            if (!schedule.some(Boolean)) {
+              showError('აირჩიეთ მინიმუმ ერთი დღე');
+              btn.disabled = false;
+              return;
+            }
+            await updateHabit(id, fd.get('text').trim(), schedule);
+          } catch (err) {
+            showError('ჩვევის განახლება ვერ მოხერხდა: ' + err.message);
+          }
+          btn.disabled = false;
+        }
+      });
+
       appRoot.addEventListener('click', async (e) => {
         const statCard = e.target.closest('.stat-card[data-stat]');
         if (statCard) {
@@ -1468,6 +1769,54 @@
           } else {
             expandedGroups.add(date);
           }
+          return;
+        }
+
+        const editTaskBtn = e.target.closest('[data-edit-task]');
+        if (editTaskBtn) {
+          editingTaskId = editTaskBtn.dataset.editTask;
+          editingEventId = null;
+          editingHabitId = null;
+          render();
+          return;
+        }
+
+        const cancelTaskBtn = e.target.closest('[data-cancel-edit-task]');
+        if (cancelTaskBtn) {
+          editingTaskId = null;
+          render();
+          return;
+        }
+
+        const editEventBtn = e.target.closest('[data-edit-event]');
+        if (editEventBtn) {
+          editingEventId = editEventBtn.dataset.editEvent;
+          editingTaskId = null;
+          editingHabitId = null;
+          render();
+          return;
+        }
+
+        const cancelEventBtn = e.target.closest('[data-cancel-edit-event]');
+        if (cancelEventBtn) {
+          editingEventId = null;
+          render();
+          return;
+        }
+
+        const editHabitBtn = e.target.closest('[data-edit-habit]');
+        if (editHabitBtn) {
+          editingHabitId = editHabitBtn.dataset.editHabit;
+          editingTaskId = null;
+          editingEventId = null;
+          render();
+          return;
+        }
+
+        const cancelHabitBtn = e.target.closest('[data-cancel-edit-habit]');
+        if (cancelHabitBtn) {
+          editingHabitId = null;
+          render();
           return;
         }
 
