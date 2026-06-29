@@ -132,6 +132,12 @@
       padding: 1rem;
       text-align: center;
       box-shadow: var(--shadow);
+      cursor: pointer;
+      transition: box-shadow .15s ease;
+    }
+
+    .stat-card:hover {
+      box-shadow: 0 4px 12px rgba(0,0,0,.12);
     }
 
     .stat-card .num {
@@ -437,6 +443,32 @@
       display: none;
     }
 
+    .filter-bar {
+      display: flex;
+      gap: .5rem;
+      flex-wrap: wrap;
+      margin-bottom: 1rem;
+    }
+
+    .filter-btn {
+      padding: .4rem .85rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      font-size: .85rem;
+      cursor: pointer;
+      transition: background .15s, border-color .15s, color .15s;
+    }
+
+    .filter-btn:hover { background: var(--bg); }
+
+    .filter-btn.active {
+      background: #eff6ff;
+      border-color: var(--accent);
+      color: var(--accent);
+      font-weight: 500;
+    }
+
     /* Responsive */
     @media (max-width: 768px) {
       .sidebar {
@@ -543,6 +575,7 @@
         <button class="nav-item" data-page="new-event">ახალი თარიღი</button>
         <button class="nav-item" data-page="habits">ჩვევები</button>
         <button class="nav-item" data-page="all-tasks">ყველა ამოცანა</button>
+        <button class="nav-item" data-page="all-events">ყველა თარიღი</button>
       </nav>
     </aside>
 
@@ -639,7 +672,19 @@
       <!-- All Tasks -->
       <div class="page" id="page-all-tasks">
         <h1 class="page-title">ყველა ამოცანა</h1>
+        <div class="filter-bar" id="taskFilterBar">
+          <button type="button" class="filter-btn active" data-filter="all">ყველა</button>
+          <button type="button" class="filter-btn" data-filter="active">მიმდინარე</button>
+          <button type="button" class="filter-btn" data-filter="overdue">ვადაგადასული</button>
+          <button type="button" class="filter-btn" data-filter="done">შესრულებული</button>
+        </div>
         <div id="all-tasks-list"></div>
+      </div>
+
+      <!-- All Events -->
+      <div class="page" id="page-all-events">
+        <h1 class="page-title">ყველა თარიღი</h1>
+        <div id="all-events-list"></div>
       </div>
     </main>
   </div>
@@ -694,6 +739,7 @@
     let events = [];
     let habits = [];
     const expandedGroups = new Set();
+    let taskFilter = 'all';
 
     const MONTHS_KA = ['იანვარი', 'თებერვალი', 'მარტი', 'აპრილი', 'მაისი', 'ივნისი',
       'ივლისი', 'აგვისტო', 'სექტემბერი', 'ოქტომბერი', 'ნოემბერი', 'დეკემბერი'];
@@ -758,6 +804,26 @@
       if (diff === -1) return 'გუშინ';
       const [y, m, d] = dateStr.split('-').map(Number);
       return `${d} ${MONTHS_KA[m - 1]}`;
+    }
+
+    function filterTasks(list, filter) {
+      switch (filter) {
+        case 'active':
+          return list.filter(t => !t.done && taskStatus(t.date, false) !== 'overdue');
+        case 'overdue':
+          return list.filter(t => !t.done && taskStatus(t.date, false) === 'overdue');
+        case 'done':
+          return list.filter(t => t.done);
+        default:
+          return list;
+      }
+    }
+
+    function getUpcomingEvents() {
+      return events
+        .map(e => ({ ...e, daysLeft: daysUntilEvent(e.date) }))
+        .filter(e => e.daysLeft <= 14)
+        .sort((a, b) => a.daysLeft - b.daysLeft);
     }
 
     function getUpcomingEventStat() {
@@ -850,11 +916,15 @@
       if (!db) throw new Error('Supabase კლიენტი ჯერ არ არის ინიციალიზებული');
     }
 
-    function navigate(page) {
+    function navigate(page, opts = {}) {
+      if (opts.taskFilter !== undefined) {
+        taskFilter = opts.taskFilter;
+      }
       document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
       document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
       document.getElementById('page-' + page).classList.add('active');
-      document.querySelector(`[data-page="${page}"]`).classList.add('active');
+      const navItem = document.querySelector(`[data-page="${page}"]`);
+      if (navItem) navItem.classList.add('active');
       closeSidebar();
       render();
     }
@@ -1070,19 +1140,17 @@
     function render() {
       const activeTasks = tasks.filter(t => !t.done);
       const overdue = activeTasks.filter(t => taskStatus(t.date, false) === 'overdue');
-      const upcomingEvents = events
-        .map(e => ({ ...e, daysLeft: daysUntilEvent(e.date) }))
-        .filter(e => e.daysLeft <= 14)
-        .sort((a, b) => a.daysLeft - b.daysLeft);
+      const upcomingEvents = getUpcomingEvents();
       const todayHabits = habits.filter(h => isHabitScheduledToday(h.days));
       const upcomingStat = getUpcomingEventStat();
+      const upcomingCount = upcomingEvents.length;
 
       // Stats
       document.getElementById('stats').innerHTML = `
-        <div class="stat-card"><div class="num">${activeTasks.length}</div><div class="label">მიმდინარე</div></div>
-        <div class="stat-card"><div class="num">${overdue.length}</div><div class="label">ვადაგადასული</div></div>
-        <div class="stat-card"><div class="num">${upcomingStat.num}</div><div class="label">${upcomingStat.label}</div></div>
-        <div class="stat-card"><div class="num">${habits.length}</div><div class="label">ჩვევები</div></div>`;
+        <div class="stat-card" data-stat="active" role="button" tabindex="0"><div class="num">${activeTasks.length}</div><div class="label">მიმდინარე</div></div>
+        <div class="stat-card" data-stat="overdue" role="button" tabindex="0"><div class="num">${overdue.length}</div><div class="label">ვადაგადასული</div></div>
+        <div class="stat-card" data-stat="upcoming" role="button" tabindex="0"><div class="num">${upcomingCount}</div><div class="label">მოახლოებული</div></div>
+        <div class="stat-card" data-stat="habits" role="button" tabindex="0"><div class="num">${habits.length}</div><div class="label">ჩვევები</div></div>`;
 
       // Dashboard tasks (grouped by date)
       const dashTasks = activeTasks;
@@ -1100,10 +1168,21 @@
         ? todayHabits.map(h => renderHabitCard(h, true)).join('')
         : '<p class="empty">დღევანდელი ჩვევები არ არის</p>';
 
-      // All tasks (grouped by date)
-      document.getElementById('all-tasks-list').innerHTML = tasks.length
-        ? renderTaskGroups(tasks, true)
+      // All tasks (grouped by date, filtered)
+      const filteredTasks = filterTasks(tasks, taskFilter);
+      const showDoneInGroups = taskFilter === 'all' || taskFilter === 'done';
+      document.getElementById('all-tasks-list').innerHTML = filteredTasks.length
+        ? renderTaskGroups(filteredTasks, showDoneInGroups)
         : '<p class="empty">ამოცანები არ არის</p>';
+
+      document.querySelectorAll('#taskFilterBar .filter-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.filter === taskFilter);
+      });
+
+      // All events (14 days)
+      document.getElementById('all-events-list').innerHTML = upcomingEvents.length
+        ? upcomingEvents.map(e => renderEventCard(e)).join('')
+        : '<p class="empty">მოახლოებული თარიღები არ არის</p>';
 
       // Habits list
       document.getElementById('habits-list').innerHTML = habits.length
@@ -1146,6 +1225,23 @@
       });
 
       appRoot.addEventListener('click', async (e) => {
+        const statCard = e.target.closest('.stat-card[data-stat]');
+        if (statCard) {
+          const stat = statCard.dataset.stat;
+          if (stat === 'active') navigate('all-tasks', { taskFilter: 'active' });
+          else if (stat === 'overdue') navigate('all-tasks', { taskFilter: 'overdue' });
+          else if (stat === 'upcoming') navigate('all-events');
+          else if (stat === 'habits') navigate('habits');
+          return;
+        }
+
+        const filterBtn = e.target.closest('#taskFilterBar .filter-btn');
+        if (filterBtn) {
+          taskFilter = filterBtn.dataset.filter;
+          render();
+          return;
+        }
+
         const groupHeader = e.target.closest('.date-group-header');
         if (groupHeader) {
           const group = groupHeader.closest('.date-group');
