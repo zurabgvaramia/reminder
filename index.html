@@ -1011,6 +1011,10 @@
       return tasks.filter(t => String(t.category_id) === String(categoryId)).length;
     }
 
+    function countOpenTasksInCategory(categoryId) {
+      return tasks.filter(t => !t.done && String(t.category_id) === String(categoryId)).length;
+    }
+
     function getUpcomingEvents() {
       return events
         .map(e => ({ ...e, daysLeft: daysUntilEvent(e.date) }))
@@ -1539,7 +1543,7 @@
     }
 
     function renderCategoryCard(cat) {
-      const count = countTasksInCategory(cat.id);
+      const count = countOpenTasksInCategory(cat.id);
       return `
         <div class="category-card" data-category-id="${cat.id}" role="button" tabindex="0"
              style="--cat-color: ${esc(cat.color)}">
@@ -1588,7 +1592,7 @@
       statsEl.style.display = statCards.length ? '' : 'none';
 
       // Dashboard category cards (only with tasks)
-      const categoriesWithTasks = categories.filter(c => countTasksInCategory(c.id) > 0);
+      const categoriesWithTasks = categories.filter(c => countOpenTasksInCategory(c.id) > 0);
       document.getElementById('category-cards').innerHTML = categoriesWithTasks.length
         ? categoriesWithTasks.map(c => renderCategoryCard(c)).join('')
         : '';
