@@ -1584,7 +1584,8 @@
 
     function render() {
       const activeTasks = tasks.filter(t => isTaskOpen(t));
-      const overdue = activeTasks.filter(t => taskStatus(t.date, false) === 'overdue');
+      const currentTasks = filterTasks(tasks, 'active');
+      const overdue = filterTasks(tasks, 'overdue');
       const upcomingEvents = getUpcomingEvents();
       const todayHabits = habits.filter(h => isHabitScheduledToday(h.days));
       const upcomingStat = getUpcomingEventStat();
@@ -1592,8 +1593,8 @@
 
       // Stats
       const statCards = [];
-      if (activeTasks.length > 0) {
-        statCards.push(`<div class="stat-card" data-stat="active" role="button" tabindex="0"><div class="num">${activeTasks.length}</div><div class="label">მიმდინარე</div></div>`);
+      if (currentTasks.length > 0) {
+        statCards.push(`<div class="stat-card" data-stat="active" role="button" tabindex="0"><div class="num">${currentTasks.length}</div><div class="label">მიმდინარე</div></div>`);
       }
       if (overdue.length > 0) {
         statCards.push(`<div class="stat-card" data-stat="overdue" role="button" tabindex="0"><div class="num">${overdue.length}</div><div class="label">ვადაგადასული</div></div>`);
@@ -1764,8 +1765,8 @@
         const statCard = e.target.closest('.stat-card[data-stat]');
         if (statCard) {
           const stat = statCard.dataset.stat;
-          if (stat === 'active') navigate('all-tasks', { taskFilter: 'active' });
-          else if (stat === 'overdue') navigate('all-tasks', { taskFilter: 'overdue' });
+          if (stat === 'active') navigate('all-tasks', { taskFilter: 'active', categoryFilter: '' });
+          else if (stat === 'overdue') navigate('all-tasks', { taskFilter: 'overdue', categoryFilter: '' });
           else if (stat === 'upcoming') navigate('all-events');
           else if (stat === 'habits') navigate('habits');
           return;
