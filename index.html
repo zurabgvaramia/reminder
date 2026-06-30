@@ -912,6 +912,7 @@
     const expandedGroups = new Set();
     let taskFilter = 'all';
     let categoryFilter = '';
+    let categoryOpenOnly = false;
     let editingTaskId = null;
     let editingEventId = null;
     let editingHabitId = null;
@@ -947,7 +948,7 @@
     }
 
     function taskStatus(dateStr, done) {
-      if (done) return '';
+      if (isTaskDone(done)) return '';
       const diff = daysBetween(todayStr(), dateStr);
       if (diff < 0) return 'overdue';
       if (diff <= 3) return 'soon';
@@ -981,14 +982,22 @@
       return `${d} ${MONTHS_KA[m - 1]}`;
     }
 
+    function isTaskDone(done) {
+      return done === true || done === 1 || done === '1' || done === 'true';
+    }
+
+    function isTaskOpen(task) {
+      return !isTaskDone(task.done);
+    }
+
     function filterTasks(list, filter) {
       switch (filter) {
         case 'active':
-          return list.filter(t => !t.done && taskStatus(t.date, false) !== 'overdue');
+          return list.filter(t => isTaskOpen(t) && taskStatus(t.date, false) !== 'overdue');
         case 'overdue':
-          return list.filter(t => !t.done && taskStatus(t.date, false) === 'overdue');
+          return list.filter(t => isTaskOpen(t) && taskStatus(t.date, false) === 'overdue');
         case 'done':
-          return list.filter(t => t.done);
+          return list.filter(t => isTaskDone(t.done));
         default:
           return list;
       }
@@ -998,6 +1007,9 @@
       let result = filterTasks(list, taskFilter);
       if (categoryFilter) {
         result = result.filter(t => String(t.category_id) === String(categoryFilter));
+        if (categoryOpenOnly) {
+          result = result.filter(t => isTaskOpen(t));
+        }
       }
       return result;
     }
@@ -1012,7 +1024,7 @@
     }
 
     function countOpenTasksInCategory(categoryId) {
-      return tasks.filter(t => !t.done && String(t.category_id) === String(categoryId)).length;
+      return tasks.filter(t => isTaskOpen(t) && String(t.category_id) === String(categoryId)).length;
     }
 
     function getUpcomingEvents() {
@@ -1038,7 +1050,7 @@
     }
 
     function renderTaskGroups(taskList, showDone = false) {
-      const filtered = showDone ? taskList : taskList.filter(t => !t.done);
+      const filtered = showDone ? taskList : taskList.filter(t => isTaskOpen(t));
       if (!filtered.length) return '';
 
       const sorted = [...filtered].sort((a, b) => {
@@ -1118,6 +1130,11 @@
       }
       if (opts.categoryFilter !== undefined) {
         categoryFilter = opts.categoryFilter ? String(opts.categoryFilter) : '';
+      }
+      if (opts.categoryOpenOnly !== undefined) {
+        categoryOpenOnly = opts.categoryOpenOnly;
+      } else {
+        categoryOpenOnly = false;
       }
       editingTaskId = null;
       editingEventId = null;
@@ -1566,7 +1583,7 @@
     }
 
     function render() {
-      const activeTasks = tasks.filter(t => !t.done);
+      const activeTasks = tasks.filter(t => isTaskOpen(t));
       const overdue = activeTasks.filter(t => taskStatus(t.date, false) === 'overdue');
       const upcomingEvents = getUpcomingEvents();
       const todayHabits = habits.filter(h => isHabitScheduledToday(h.days));
@@ -1757,13 +1774,18 @@
         const filterBtn = e.target.closest('#taskFilterBar .filter-btn');
         if (filterBtn) {
           taskFilter = filterBtn.dataset.filter;
+          categoryOpenOnly = false;
           render();
           return;
         }
 
         const categoryCard = e.target.closest('.category-card[data-category-id]');
         if (categoryCard) {
-          navigate('all-tasks', { categoryFilter: categoryCard.dataset.categoryId, taskFilter: 'all' });
+          navigate('all-tasks', {
+            categoryFilter: categoryCard.dataset.categoryId,
+            taskFilter: 'all',
+            categoryOpenOnly: true,
+          });
           return;
         }
 
@@ -1868,6 +1890,7 @@
 
       document.getElementById('categoryFilterSelect').addEventListener('change', (e) => {
         categoryFilter = e.target.value;
+        categoryOpenOnly = false;
         render();
       });
 
